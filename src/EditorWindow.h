@@ -50,8 +50,31 @@ private:
 	void onSavePresetAs ();
 	void requestClose ();
 
+	// RAII scope guard around a modal file dialog: suspends the 1s dirty poll and sets dialogOpen for
+	// the dialog's lifetime, restoring both when it returns (on OK and Cancel alike). dialogOpen gates
+	// BOTH saveIfDirty entry points — the WM_TIMER poll AND the posted WM_VSTDEMON_SAVE — so neither
+	// writes pre-dialog state to the old target while IFileDialog::Show pumps its nested modal loop.
+	struct DialogScope
+	{
+		explicit DialogScope (EditorWindow& owner) : window (owner)
+		{
+			window.dialogOpen = true;
+			window.pauseDirtyPoll ();
+		}
+		~DialogScope ()
+		{
+			window.resumeDirtyPoll ();
+			window.dialogOpen = false;
+		}
+		DialogScope (const DialogScope&) = delete;
+		DialogScope& operator= (const DialogScope&) = delete;
+
+	private:
+		EditorWindow& window;
+	};
+
 	// Suspend/re-arm the 1s dirty poll around a modal file dialog (its nested loop keeps pumping
-	// WM_TIMER otherwise).
+	// WM_TIMER otherwise). Driven by DialogScope.
 	void pauseDirtyPoll ();
 	void resumeDirtyPoll ();
 
@@ -76,6 +99,7 @@ private:
 
 	bool viewAttached {false};
 	bool timerActive {false};
+	bool dialogOpen {false};
 
 	bool resizeViewRecursionGuard {false};
 	bool inDpiChangeState {false};

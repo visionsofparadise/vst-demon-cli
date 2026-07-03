@@ -312,11 +312,15 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 			return TRUE;
 		}
 		case WM_TIMER:
-			if (wParam == kDirtyPollTimerId && presetManager)
+			// dialogOpen gates the poll even though the timer is also killed around dialogs — a
+			// belt-and-braces guard shared with the posted-save path below.
+			if (wParam == kDirtyPollTimerId && presetManager && !dialogOpen)
 				presetManager->saveIfDirty ();
 			return 0;
 		case WM_VSTDEMON_SAVE:
-			if (presetManager)
+			// An endEdit-posted save can land inside IFileDialog::Show's nested modal loop; dialogOpen
+			// blocks it so pre-dialog state is never written to the target the user is leaving.
+			if (presetManager && !dialogOpen)
 				presetManager->saveIfDirty ();
 			return 0;
 		case WM_COMMAND:
@@ -621,10 +625,11 @@ void EditorWindow::onOpenPreset ()
 	if (!presetManager)
 		return;
 
-	pauseDirtyPoll ();
-	std::string path =
-	    runFileDialog (hwnd, CLSID_FileOpenDialog, L"Open Preset", [] (IFileDialog*) {});
-	resumeDirtyPoll ();
+	std::string path;
+	{
+		DialogScope scope (*this);
+		path = runFileDialog (hwnd, CLSID_FileOpenDialog, L"Open Preset", [] (IFileDialog*) {});
+	}
 	if (path.empty ())
 		return; // cancelled or failed (diagnostics already on stderr)
 
@@ -643,13 +648,14 @@ void EditorWindow::onSavePresetAs ()
 	                            ? fileNameOf (presetManager->targetPath ())
 	                            : className + ".vstpreset";
 
-	pauseDirtyPoll ();
-	std::string path =
-	    runFileDialog (hwnd, CLSID_FileSaveDialog, L"Save Preset As", [&] (IFileDialog* dialog) {
-		    dialog->SetDefaultExtension (L"vstpreset");
-		    dialog->SetFileName (widenUtf8 (suggested).c_str ());
-	    });
-	resumeDirtyPoll ();
+	std::string path;
+	{
+		DialogScope scope (*this);
+		path = runFileDialog (hwnd, CLSID_FileSaveDialog, L"Save Preset As", [&] (IFileDialog* dialog) {
+			dialog->SetDefaultExtension (L"vstpreset");
+			dialog->SetFileName (widenUtf8 (suggested).c_str ());
+		});
+	}
 	if (path.empty ())
 		return; // cancelled or failed
 
