@@ -1,5 +1,8 @@
 #include "PluginHost.h"
 
+#include "WindowMessages.h"
+
+#include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
@@ -8,16 +11,97 @@
 #include <sstream>
 
 using Steinberg::FUID;
+using Steinberg::FUnknown;
 using Steinberg::IPlugView;
 using Steinberg::IPtr;
+using Steinberg::kNoInterface;
+using Steinberg::kResultOk;
+using Steinberg::kResultTrue;
 using Steinberg::owned;
+using Steinberg::tresult;
+using Steinberg::TUID;
+using Steinberg::uint32;
 using Steinberg::Vst::IComponent;
+using Steinberg::Vst::IComponentHandler;
+using Steinberg::Vst::IComponentHandler2;
 using Steinberg::Vst::IEditController;
+using Steinberg::Vst::ParamID;
+using Steinberg::Vst::ParamValue;
 using Steinberg::Vst::PlugProvider;
 using Steinberg::Vst::PluginContextFactory;
 using Steinberg::Vst::ViewType::kEditor;
 
 namespace vstdemon {
+
+//------------------------------------------------------------------------
+void ComponentHandler::requestSave ()
+{
+	if (hwnd)
+		PostMessage (hwnd, WM_VSTDEMON_SAVE, 0, 0);
+}
+
+tresult PLUGIN_API ComponentHandler::beginEdit (ParamID)
+{
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::performEdit (ParamID, ParamValue)
+{
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::endEdit (ParamID)
+{
+	requestSave ();
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::restartComponent (Steinberg::int32)
+{
+	requestSave ();
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::setDirty (Steinberg::TBool state)
+{
+	if (state)
+		requestSave ();
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::requestOpenEditor (Steinberg::FIDString)
+{
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::startGroupEdit ()
+{
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::finishGroupEdit ()
+{
+	return kResultOk;
+}
+
+tresult PLUGIN_API ComponentHandler::queryInterface (const TUID iid, void** obj)
+{
+	if (Steinberg::FUnknownPrivate::iidEqual (iid, IComponentHandler::iid) ||
+	    Steinberg::FUnknownPrivate::iidEqual (iid, FUnknown::iid))
+	{
+		*obj = static_cast<IComponentHandler*> (this);
+		addRef ();
+		return kResultTrue;
+	}
+	if (Steinberg::FUnknownPrivate::iidEqual (iid, IComponentHandler2::iid))
+	{
+		*obj = static_cast<IComponentHandler2*> (this);
+		addRef ();
+		return kResultTrue;
+	}
+	*obj = nullptr;
+	return kNoInterface;
+}
 
 namespace {
 
@@ -51,6 +135,17 @@ PluginHost::PluginHost ()
 //------------------------------------------------------------------------
 PluginHost::~PluginHost ()
 {
+	// Uninstall the edit-notification handler before teardown: the editor window it posts to is
+	// already destroyed by this point (main.cpp destroys the window before the host), and
+	// deactivation/release below can drive controller callbacks. Deregistering here — and dropping
+	// the handler's stale HWND — keeps any late callback from reaching a dead window.
+	if (plugProvider)
+	{
+		if (auto* controller = plugProvider->getControllerPtr ().get ())
+			controller->setComponentHandler (nullptr);
+	}
+	handler.setWindow (nullptr);
+
 	if (componentActivated && plugProvider)
 	{
 		if (auto* component = plugProvider->getComponentPtr ().get ())
@@ -155,11 +250,14 @@ HostResult PluginHost::open (const std::string& pluginPath, const std::string& p
 		return {false, "Failed to initialize plugin class '" + classInfo->name () + "'."};
 	}
 
-	if (!plugProvider->getControllerPtr ())
+	auto controller = plugProvider->getControllerPtr ();
+	if (!controller)
 	{
 		return {false,
 		        "Plugin class '" + classInfo->name () + "' provides no edit controller (no editor)."};
 	}
+
+	controller->setComponentHandler (&handler);
 
 	if (auto* component = plugProvider->getComponentPtr ().get ())
 	{

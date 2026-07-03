@@ -1,6 +1,7 @@
 #include "EditorWindow.h"
 
 #include "PresetManager.h"
+#include "WindowMessages.h"
 
 #include "pluginterfaces/base/funknownimpl.h"
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
@@ -30,6 +31,11 @@ namespace vstdemon {
 namespace {
 
 const WCHAR* kWindowClassName = L"VSTDemon WindowClass";
+
+// 1-second dirty poll — the catch-all trigger for vendors whose UI edits bypass the parameter
+// system (so no endEdit fires). See design-cli's auto-save trigger set.
+constexpr UINT_PTR kDirtyPollTimerId = 1;
+constexpr UINT kDirtyPollIntervalMs = 1000;
 
 struct DynamicLibrary
 {
@@ -252,8 +258,21 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 			constrainSizing (reinterpret_cast<RECT*> (lParam));
 			return TRUE;
 		}
+		case WM_TIMER:
+			if (wParam == kDirtyPollTimerId && presetManager)
+				presetManager->saveIfDirty ();
+			return 0;
+		case WM_VSTDEMON_SAVE:
+			if (presetManager)
+				presetManager->saveIfDirty ();
+			return 0;
 		case WM_CLOSE:
 		{
+			if (timerActive)
+			{
+				KillTimer (hwnd, kDirtyPollTimerId);
+				timerActive = false;
+			}
 			if (presetManager && presetManager->hasTarget () && !presetManager->save ())
 				std::fprintf (stderr,
 				              "Warning: failed to save preset on close; state was not persisted.\n");
@@ -419,6 +438,9 @@ bool EditorWindow::show ()
 		return false;
 	}
 	viewAttached = true;
+
+	SetTimer (hwnd, kDirtyPollTimerId, kDirtyPollIntervalMs, nullptr);
+	timerActive = true;
 
 	SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
 	              SWP_NOSIZE | SWP_NOMOVE | SWP_NOCOPYBITS | SWP_SHOWWINDOW);

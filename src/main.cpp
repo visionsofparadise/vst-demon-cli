@@ -57,6 +57,20 @@ std::string jsonEscape (const std::string& s)
 	return out;
 }
 
+// The stdout event stream (design-cli's CLI contract): one line of JSON per event, nothing else on
+// stdout; all diagnostics go to stderr. Paths are the only dynamic strings, hand-rolled-escaped.
+void emitEvent (const std::string& name)
+{
+	std::printf ("{\"event\":\"%s\"}\n", name.c_str ());
+	std::fflush (stdout);
+}
+
+void emitPathEvent (const std::string& name, const std::string& path)
+{
+	std::printf ("{\"event\":\"%s\",\"path\":\"%s\"}\n", name.c_str (), jsonEscape (path).c_str ());
+	std::fflush (stdout);
+}
+
 struct Args
 {
 	std::string plugin;
@@ -173,6 +187,7 @@ int main (int argc, char* argv[])
 
 		vstdemon::PresetManager presetManager (host.getComponent (), host.getController (),
 		                                       componentUID);
+		presetManager.setOnSaved ([] (const std::string& path) { emitPathEvent ("saved", path); });
 		presetManager.setTarget (args.preset);
 
 		auto loaded2 = presetManager.load ();
@@ -200,6 +215,8 @@ int main (int argc, char* argv[])
 			return 1;
 		}
 
+		host.componentHandler ().setWindow (window->getHwnd ());
+
 		if (!window->show ())
 		{
 			std::fprintf (stderr, "Failed to attach the plugin editor to the window.\n");
@@ -208,8 +225,9 @@ int main (int argc, char* argv[])
 			return 1;
 		}
 
-		std::printf ("{\"event\":\"ready\"}\n");
-		std::fflush (stdout);
+		emitEvent ("ready");
+		if (presetManager.hasTarget ())
+			emitPathEvent ("preset-path", presetManager.targetPath ());
 
 		MSG msg;
 		while (GetMessage (&msg, nullptr, 0, 0))
@@ -218,8 +236,7 @@ int main (int argc, char* argv[])
 			DispatchMessage (&msg);
 		}
 
-		std::printf ("{\"event\":\"closed\"}\n");
-		std::fflush (stdout);
+		emitEvent ("closed");
 	}
 
 	OleUninitialize ();

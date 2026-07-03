@@ -4,6 +4,7 @@
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,13 @@ public:
 	bool hasTarget () const { return !target.empty (); }
 	void setTarget (const std::string& path) { target = path; }
 
+	// Invoked with the target path after every successful write. Wired by main.cpp to emit the
+	// stdout {"event":"saved","path":...} event; the emitter stays in main.cpp scope.
+	void setOnSaved (std::function<void (const std::string&)> callback)
+	{
+		onSaved = std::move (callback);
+	}
+
 	// Load target into the plugin if the file exists. Missing file: no load, target unchanged,
 	// ok=true. Unreadable / wrong-class file: ok=false with an error. No target: no-op, ok=true.
 	PresetResult load ();
@@ -54,6 +62,7 @@ private:
 	Steinberg::FUID componentUID;
 
 	std::string target;
+	std::function<void (const std::string&)> onSaved;
 
 	bool haveLastWritten {false};
 	std::vector<char> lastComponentState;

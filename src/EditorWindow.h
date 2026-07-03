@@ -60,6 +60,7 @@ private:
 	std::shared_ptr<EditorWindow> self;
 
 	bool viewAttached {false};
+	bool timerActive {false};
 
 	bool resizeViewRecursionGuard {false};
 	bool inDpiChangeState {false};

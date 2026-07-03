@@ -145,6 +145,9 @@ bool PresetManager::writePreset ()
 		haveLastWritten = true;
 	}
 
+	if (onSaved)
+		onSaved (target);
+
 	return true;
 }
 
