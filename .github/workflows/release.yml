@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release
+
+      - name: Package installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          iscc /DAppVersion=${{ steps.version.outputs.version }} installers\installer.iss
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\Release\vst-demon.exe `
+            -DestinationPath dist\vst-demon-win32-x64.zip -Force
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/vst-demon-setup-${{ steps.version.outputs.version }}.exe
+            dist/vst-demon-win32-x64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
