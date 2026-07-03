@@ -33,11 +33,14 @@ std::string joinClassNames (const std::vector<std::string>& names)
 	return os.str ();
 }
 
-const char* kEmptyFactoryError =
-    "The plugin's factory is empty (no audio-effect classes). For a Waves WaveShell this means the "
-    "Waves license is inactive — activate it in Waves Central and retry.";
-
 } // namespace
+
+//------------------------------------------------------------------------
+const char* PluginHost::emptyFactoryError ()
+{
+	return "The plugin's factory is empty (no audio-effect classes). For a Waves WaveShell this "
+	       "means the Waves license is inactive — activate it in Waves Central and retry.";
+}
 
 //------------------------------------------------------------------------
 PluginHost::PluginHost ()
@@ -102,7 +105,7 @@ std::optional<PlugProvider::ClassInfo> PluginHost::selectClass (const std::strin
 
 	if (effectClasses.empty ())
 	{
-		error = kEmptyFactoryError;
+		error = emptyFactoryError ();
 		return std::nullopt;
 	}
 

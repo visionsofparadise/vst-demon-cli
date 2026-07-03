@@ -31,6 +31,10 @@ public:
 	// Class names of every kVstAudioEffectClass class in the loaded module.
 	std::vector<std::string> effectClassNames () const;
 
+	// The error shown when a module's factory exposes no audio-effect class
+	// (a Waves shell with an inactive license, most commonly).
+	static const char* emptyFactoryError ();
+
 	// Load the module, select a class, and bring up component/controller/view.
 	// pluginName selects a class by ClassInfo::name(); empty picks the sole/first effect class.
 	HostResult open (const std::string& pluginPath, const std::string& pluginName);

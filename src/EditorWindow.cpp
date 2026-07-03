@@ -1,5 +1,7 @@
 #include "EditorWindow.h"
 
+#include "PresetManager.h"
+
 #include "pluginterfaces/base/funknownimpl.h"
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "public.sdk/source/vst/utility/optional.h"
@@ -139,9 +141,11 @@ DWORD computeStyle (bool resizeable)
 
 //------------------------------------------------------------------------
 std::shared_ptr<EditorWindow> EditorWindow::make (const std::string& title,
-                                                  const IPtr<IPlugView>& view)
+                                                  const IPtr<IPlugView>& view,
+                                                  PresetManager* presetManager)
 {
 	auto window = std::make_shared<EditorWindow> ();
+	window->presetManager = presetManager;
 	if (window->init (title, view))
 		return window;
 	return nullptr;
@@ -249,6 +253,8 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_CLOSE:
 		{
+			if (presetManager)
+				presetManager->save ();
 			closePlugView ();
 			SetWindowLongPtr (hwnd, GWLP_USERDATA, (LONG_PTR) nullptr);
 			HWND toDestroy = hwnd;
@@ -397,12 +403,19 @@ bool EditorWindow::show ()
 	onContentScaleFactorChanged (getContentScaleFactor ());
 
 	if (plugView->isPlatformTypeSupported (kPlatformTypeHWND) != kResultTrue)
+	{
+		self = nullptr;
 		return false;
+	}
 
 	plugView->setFrame (this);
 
 	if (plugView->attached (hwnd, kPlatformTypeHWND) != kResultTrue)
+	{
+		plugView->setFrame (nullptr);
+		self = nullptr;
 		return false;
+	}
 
 	SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
 	              SWP_NOSIZE | SWP_NOMOVE | SWP_NOCOPYBITS | SWP_SHOWWINDOW);

@@ -1,5 +1,6 @@
 #include "EditorWindow.h"
 #include "PluginHost.h"
+#include "PresetManager.h"
 
 #include <cstdio>
 #include <cstring>
@@ -134,10 +135,7 @@ int main (int argc, char* argv[])
 		auto names = host.effectClassNames ();
 		if (names.empty ())
 		{
-			std::fprintf (stderr,
-			              "The plugin's factory is empty (no audio-effect classes). For a Waves "
-			              "WaveShell this means the Waves license is inactive — activate it in Waves "
-			              "Central and retry.\n");
+			std::fprintf (stderr, "%s\n", vstdemon::PluginHost::emptyFactoryError ());
 			return 1;
 		}
 		std::string json = "[";
@@ -164,6 +162,27 @@ int main (int argc, char* argv[])
 			return 1;
 		}
 
+		Steinberg::FUID componentUID;
+		if (!host.getComponentUID (componentUID))
+		{
+			std::fprintf (stderr, "Could not resolve the component class ID for '%s'.\n",
+			              host.selectedClassName ().c_str ());
+			OleUninitialize ();
+			return 1;
+		}
+
+		vstdemon::PresetManager presetManager (host.getComponent (), host.getController (),
+		                                       componentUID);
+		presetManager.setTarget (args.preset);
+
+		auto loaded2 = presetManager.load ();
+		if (!loaded2.ok)
+		{
+			std::fprintf (stderr, "%s\n", loaded2.error.c_str ());
+			OleUninitialize ();
+			return 1;
+		}
+
 		auto view = host.createView ();
 		if (!view)
 		{
@@ -173,7 +192,7 @@ int main (int argc, char* argv[])
 			return 1;
 		}
 
-		auto window = vstdemon::EditorWindow::make (host.selectedClassName (), view);
+		auto window = vstdemon::EditorWindow::make (host.selectedClassName (), view, &presetManager);
 		if (!window)
 		{
 			std::fprintf (stderr, "Failed to create editor window.\n");

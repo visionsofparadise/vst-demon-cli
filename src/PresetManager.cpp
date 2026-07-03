@@ -1,0 +1,174 @@
+#include "PresetManager.h"
+
+#include "public.sdk/source/common/memorystream.h"
+#include "public.sdk/source/vst/vstpresetfile.h"
+
+#include <cstdio>
+#include <windows.h>
+
+using Steinberg::FUID;
+using Steinberg::IBStream;
+using Steinberg::IPtr;
+using Steinberg::MemoryStream;
+using Steinberg::owned;
+using Steinberg::Vst::FileStream;
+using Steinberg::Vst::PresetFile;
+
+namespace vstdemon {
+
+namespace {
+
+std::wstring widen (const std::string& s)
+{
+	if (s.empty ())
+		return {};
+	int len = MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), nullptr, 0);
+	std::wstring out (static_cast<size_t> (len), L'\0');
+	MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), out.data (), len);
+	return out;
+}
+
+bool fileExists (const std::string& path)
+{
+	DWORD attrs = GetFileAttributesW (widen (path).c_str ());
+	return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Read a MemoryStream's full contents into a byte vector.
+std::vector<char> drain (MemoryStream& stream)
+{
+	Steinberg::int64 size = 0;
+	stream.seek (0, Steinberg::IBStream::kIBSeekEnd, &size);
+	std::vector<char> out (static_cast<size_t> (size));
+	stream.seek (0, Steinberg::IBStream::kIBSeekSet, nullptr);
+	if (!out.empty ())
+	{
+		Steinberg::int32 read = 0;
+		stream.read (out.data (), static_cast<Steinberg::int32> (out.size ()), &read);
+		out.resize (static_cast<size_t> (read));
+	}
+	return out;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------
+PresetManager::PresetManager (Steinberg::Vst::IComponent* component,
+                              Steinberg::Vst::IEditController* controller, const FUID& componentUID)
+    : component (component), controller (controller), componentUID (componentUID)
+{
+}
+
+//------------------------------------------------------------------------
+PresetResult PresetManager::load ()
+{
+	if (target.empty () || !fileExists (target))
+		return {true, {}};
+
+	IPtr<IBStream> stream = owned (FileStream::open (target.c_str (), "rb"));
+	if (!stream)
+		return {false, "Could not open preset file '" + target + "' for reading."};
+
+	if (!PresetFile::loadPreset (stream, componentUID, component, controller))
+		return {false,
+		        "Failed to load preset '" + target +
+		            "': the file is unreadable or was authored for a different plugin class."};
+
+	std::vector<char> componentBytes, controllerBytes;
+	if (captureState (componentBytes, controllerBytes))
+	{
+		lastComponentState = std::move (componentBytes);
+		lastControllerState = std::move (controllerBytes);
+		haveLastWritten = true;
+	}
+
+	return {true, {}};
+}
+
+//------------------------------------------------------------------------
+bool PresetManager::captureState (std::vector<char>& componentBytes,
+                                  std::vector<char>& controllerBytes) const
+{
+	if (!component)
+		return false;
+
+	MemoryStream componentStream;
+	if (component->getState (&componentStream) != Steinberg::kResultOk)
+		return false;
+	componentBytes = drain (componentStream);
+
+	controllerBytes.clear ();
+	if (controller)
+	{
+		MemoryStream controllerStream;
+		if (controller->getState (&controllerStream) == Steinberg::kResultOk)
+			controllerBytes = drain (controllerStream);
+	}
+
+	return true;
+}
+
+//------------------------------------------------------------------------
+bool PresetManager::writePreset ()
+{
+	std::string tmp = target + ".tmp";
+
+	{
+		IPtr<IBStream> stream = owned (FileStream::open (tmp.c_str (), "wb"));
+		if (!stream)
+		{
+			std::fprintf (stderr, "Could not open '%s' for writing.\n", tmp.c_str ());
+			return false;
+		}
+		if (!PresetFile::savePreset (stream, componentUID, component, controller))
+		{
+			std::fprintf (stderr, "Failed to serialize preset state for '%s'.\n", target.c_str ());
+			return false;
+		}
+	}
+
+	if (!MoveFileExW (widen (tmp).c_str (), widen (target).c_str (), MOVEFILE_REPLACE_EXISTING))
+	{
+		std::fprintf (stderr, "Failed to move '%s' over '%s' (error %lu).\n", tmp.c_str (),
+		              target.c_str (), GetLastError ());
+		DeleteFileW (widen (tmp).c_str ());
+		return false;
+	}
+
+	std::vector<char> componentBytes, controllerBytes;
+	if (captureState (componentBytes, controllerBytes))
+	{
+		lastComponentState = std::move (componentBytes);
+		lastControllerState = std::move (controllerBytes);
+		haveLastWritten = true;
+	}
+
+	return true;
+}
+
+//------------------------------------------------------------------------
+bool PresetManager::save ()
+{
+	if (target.empty ())
+		return false;
+	return writePreset ();
+}
+
+//------------------------------------------------------------------------
+bool PresetManager::saveIfDirty ()
+{
+	if (target.empty ())
+		return false;
+
+	std::vector<char> componentBytes, controllerBytes;
+	if (!captureState (componentBytes, controllerBytes))
+		return false;
+
+	if (haveLastWritten && componentBytes == lastComponentState &&
+	    controllerBytes == lastControllerState)
+		return false;
+
+	return writePreset ();
+}
+
+} // namespace vstdemon

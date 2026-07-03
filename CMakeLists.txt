@@ -19,8 +19,10 @@ add_executable(vst-demon
 	src/main.cpp
 	src/PluginHost.cpp
 	src/EditorWindow.cpp
+	src/PresetManager.cpp
 	vst3sdk/public.sdk/source/vst/hosting/plugprovider.cpp
 	vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
+	vst3sdk/public.sdk/source/common/memorystream.cpp
 )
 
 target_link_libraries(vst-demon PRIVATE ole32)

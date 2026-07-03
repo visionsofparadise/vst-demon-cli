@@ -10,6 +10,8 @@
 
 namespace vstdemon {
 
+class PresetManager;
+
 using Steinberg::FUnknown;
 using Steinberg::IPlugFrame;
 using Steinberg::IPlugView;
@@ -20,8 +22,8 @@ using Steinberg::ViewRect;
 class EditorWindow : public IPlugFrame, public std::enable_shared_from_this<EditorWindow>
 {
 public:
-	static std::shared_ptr<EditorWindow> make (const std::string& title,
-	                                            const IPtr<IPlugView>& view);
+	static std::shared_ptr<EditorWindow> make (const std::string& title, const IPtr<IPlugView>& view,
+	                                            PresetManager* presetManager);
 
 	~EditorWindow () noexcept;
 
@@ -53,6 +55,7 @@ private:
 	Steinberg::uint32 PLUGIN_API release () override { return 1000; }
 
 	IPtr<IPlugView> plugView;
+	PresetManager* presetManager {nullptr};
 	HWND hwnd {nullptr};
 	std::shared_ptr<EditorWindow> self;
 
