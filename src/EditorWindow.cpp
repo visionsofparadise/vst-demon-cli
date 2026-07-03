@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <shobjidl.h>
+#include <string>
 
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
@@ -36,6 +38,43 @@ const WCHAR* kWindowClassName = L"VSTDemon WindowClass";
 // system (so no endEdit fires). See design-cli's auto-save trigger set.
 constexpr UINT_PTR kDirtyPollTimerId = 1;
 constexpr UINT kDirtyPollIntervalMs = 1000;
+
+// File-menu command ids. design-cli's menu is exactly Open Preset..., Save Preset As..., Close —
+// no New/Recent/Save (auto-save makes plain Save meaningless).
+constexpr UINT kMenuOpenPreset = 0x1001;
+constexpr UINT kMenuSavePresetAs = 0x1002;
+constexpr UINT kMenuClose = 0x1003;
+
+const COMDLG_FILTERSPEC kPresetFilter[] = {{L"VST3 Preset (*.vstpreset)", L"*.vstpreset"}};
+
+std::wstring widenUtf8 (const std::string& s)
+{
+	if (s.empty ())
+		return {};
+	int len = MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), nullptr, 0);
+	std::wstring out (static_cast<size_t> (len), L'\0');
+	MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), out.data (), len);
+	return out;
+}
+
+std::string narrowUtf8 (const wchar_t* s)
+{
+	if (!s || !*s)
+		return {};
+	int len = WideCharToMultiByte (CP_UTF8, 0, s, -1, nullptr, 0, nullptr, nullptr);
+	if (len <= 0)
+		return {};
+	std::string out (static_cast<size_t> (len - 1), '\0');
+	WideCharToMultiByte (CP_UTF8, 0, s, -1, out.data (), len, nullptr, nullptr);
+	return out;
+}
+
+// The trailing path component (filename) of a UTF-8 path, for the title bar.
+std::string fileNameOf (const std::string& path)
+{
+	auto pos = path.find_last_of ("\\/");
+	return pos == std::string::npos ? path : path.substr (pos + 1);
+}
 
 struct DynamicLibrary
 {
@@ -153,6 +192,7 @@ std::shared_ptr<EditorWindow> EditorWindow::make (const std::string& title,
 {
 	auto window = std::make_shared<EditorWindow> ();
 	window->presetManager = presetManager;
+	window->className = title;
 	if (window->init (title, view))
 		return window;
 	return nullptr;
@@ -209,15 +249,28 @@ bool EditorWindow::init (const std::string& title, const IPtr<IPlugView>& view)
 	DWORD dwStyle = computeStyle (resizeable);
 	auto windowTitle = Steinberg::Vst::StringConvert::convert (title);
 
+	HMENU menu = CreateMenu ();
+	HMENU fileMenu = CreatePopupMenu ();
+	AppendMenuW (fileMenu, MF_STRING, kMenuOpenPreset, L"Open Preset...");
+	AppendMenuW (fileMenu, MF_STRING, kMenuSavePresetAs, L"Save Preset As...");
+	AppendMenuW (fileMenu, MF_SEPARATOR, 0, nullptr);
+	AppendMenuW (fileMenu, MF_STRING, kMenuClose, L"Close");
+	AppendMenuW (menu, MF_POPUP, reinterpret_cast<UINT_PTR> (fileMenu), L"File");
+
+	// bMenu=TRUE so the menu bar's height is added to the adjusted rect — the client area then still
+	// exactly fits the plugin view (no clipping/letterboxing). SetMenu happens after CreateWindowEx.
 	RECT rect {0, 0, width, height};
-	AdjustWindowRectEx (&rect, dwStyle, FALSE, exStyle);
+	AdjustWindowRectEx (&rect, dwStyle, TRUE, exStyle);
 
 	hwnd = CreateWindowEx (exStyle, kWindowClassName,
 	                       reinterpret_cast<const TCHAR*> (windowTitle.data ()), dwStyle, CW_USEDEFAULT,
 	                       CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, nullptr,
-	                       nullptr, instance, nullptr);
+	                       menu, instance, nullptr);
 	if (!hwnd)
+	{
+		DestroyMenu (menu);
 		return false;
+	}
 
 	SetWindowLongPtr (hwnd, GWLP_USERDATA, (LONG_PTR) this);
 	return true;
@@ -266,25 +319,29 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 			if (presetManager)
 				presetManager->saveIfDirty ();
 			return 0;
-		case WM_CLOSE:
-		{
-			if (timerActive)
+		case WM_COMMAND:
+			// lParam==0 marks a menu (or accelerator) command; a nonzero lParam is a child-control
+			// notification (the plugin editor is a child HWND, so its controls' WM_COMMANDs arrive
+			// here too and must not be mistaken for our menu ids).
+			if (lParam == 0)
 			{
-				KillTimer (hwnd, kDirtyPollTimerId);
-				timerActive = false;
+				switch (LOWORD (wParam))
+				{
+					case kMenuOpenPreset:
+						onOpenPreset ();
+						return 0;
+					case kMenuSavePresetAs:
+						onSavePresetAs ();
+						return 0;
+					case kMenuClose:
+						requestClose ();
+						return 0;
+				}
 			}
-			if (presetManager && presetManager->hasTarget () && !presetManager->save ())
-				std::fprintf (stderr,
-				              "Warning: failed to save preset on close; state was not persisted.\n");
-			closePlugView ();
-			SetWindowLongPtr (hwnd, GWLP_USERDATA, (LONG_PTR) nullptr);
-			HWND toDestroy = hwnd;
-			hwnd = nullptr;
-			DestroyWindow (toDestroy);
-			PostQuitMessage (0);
-			self = nullptr;
+			break;
+		case WM_CLOSE:
+			requestClose ();
 			return TRUE;
-		}
 		case WM_GETDPISCALEDSIZE:
 		{
 			inDpiChangeState = true;
@@ -300,7 +357,7 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 				clientRect.right = dpiChangedWidth;
 				clientRect.bottom = dpiChangedHeight;
 				User32Library::instance ().adjustWindowRectExForDpi (
-				    &clientRect, windowInfo.dwStyle, FALSE, windowInfo.dwExStyle,
+				    &clientRect, windowInfo.dwStyle, TRUE, windowInfo.dwExStyle,
 				    static_cast<UINT> (wParam));
 				proposedSize->cx = clientRect.right - clientRect.left;
 				proposedSize->cy = clientRect.bottom - clientRect.top;
@@ -408,7 +465,7 @@ void EditorWindow::resizeContent (int width, int height)
 	RECT clientRect {};
 	clientRect.right = width;
 	clientRect.bottom = height;
-	AdjustWindowRectEx (&clientRect, windowInfo.dwStyle, FALSE, windowInfo.dwExStyle);
+	AdjustWindowRectEx (&clientRect, windowInfo.dwStyle, TRUE, windowInfo.dwExStyle);
 	SetWindowPos (hwnd, HWND_TOP, 0, 0, clientRect.right - clientRect.left,
 	              clientRect.bottom - clientRect.top, SWP_NOMOVE | SWP_NOCOPYBITS | SWP_NOACTIVATE);
 }
@@ -460,6 +517,144 @@ void EditorWindow::closePlugView ()
 		}
 		plugView = nullptr;
 	}
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::requestClose ()
+{
+	if (timerActive)
+	{
+		KillTimer (hwnd, kDirtyPollTimerId);
+		timerActive = false;
+	}
+	// Unconditional final save (design-cli: "final capture and write before exit"). saved = "a write
+	// occurred". Dormant (no target) no-ops. Decided: keep save(), not saveIfDirty().
+	if (presetManager && presetManager->hasTarget () && !presetManager->save ())
+		std::fprintf (stderr,
+		              "Warning: failed to save preset on close; state was not persisted.\n");
+	closePlugView ();
+	SetWindowLongPtr (hwnd, GWLP_USERDATA, (LONG_PTR) nullptr);
+	HWND toDestroy = hwnd;
+	hwnd = nullptr;
+	DestroyWindow (toDestroy);
+	PostQuitMessage (0);
+	self = nullptr;
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::updateTitle ()
+{
+	std::string title = className;
+	if (presetManager && presetManager->hasTarget ())
+		title += " — " + fileNameOf (presetManager->targetPath ());
+	SetWindowTextW (hwnd, widenUtf8 (title).c_str ());
+}
+
+namespace {
+
+// Run a native IFileDialog of the given CLSID (FileOpen/FileSave) configured for .vstpreset, and
+// return the chosen UTF-8 filesystem path — empty on cancel or any failure. configure() sets
+// mode-specific options (default filename/extension). All diagnostics go to stderr.
+template <typename Configure>
+std::string runFileDialog (HWND owner, REFCLSID clsid, const wchar_t* dialogTitle,
+                           Configure&& configure)
+{
+	IFileDialog* dialog = nullptr;
+	if (CoCreateInstance (clsid, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS (&dialog)) != S_OK)
+	{
+		std::fprintf (stderr, "Could not open the file dialog.\n");
+		return {};
+	}
+
+	dialog->SetFileTypes (ARRAYSIZE (kPresetFilter), kPresetFilter);
+	dialog->SetTitle (dialogTitle);
+	configure (dialog);
+
+	std::string path;
+	if (dialog->Show (owner) == S_OK)
+	{
+		IShellItem* item = nullptr;
+		if (dialog->GetResult (&item) == S_OK)
+		{
+			PWSTR widePath = nullptr;
+			if (item->GetDisplayName (SIGDN_FILESYSPATH, &widePath) == S_OK)
+			{
+				path = narrowUtf8 (widePath);
+				CoTaskMemFree (widePath);
+			}
+			item->Release ();
+		}
+	}
+
+	dialog->Release ();
+	return path;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------
+void EditorWindow::pauseDirtyPoll ()
+{
+	// IFileDialog::Show runs a nested modal message loop; suspend the 1s poll across it so a WM_TIMER
+	// can't auto-save mid-dialog (e.g. persisting pre-Open state to the old target the user is about
+	// to leave). Re-armed by resumeDirtyPoll after the dialog returns.
+	if (timerActive)
+	{
+		KillTimer (hwnd, kDirtyPollTimerId);
+		timerActive = false;
+	}
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::resumeDirtyPoll ()
+{
+	if (!timerActive && hwnd)
+	{
+		SetTimer (hwnd, kDirtyPollTimerId, kDirtyPollIntervalMs, nullptr);
+		timerActive = true;
+	}
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::onOpenPreset ()
+{
+	if (!presetManager)
+		return;
+
+	pauseDirtyPoll ();
+	std::string path =
+	    runFileDialog (hwnd, CLSID_FileOpenDialog, L"Open Preset", [] (IFileDialog*) {});
+	resumeDirtyPoll ();
+	if (path.empty ())
+		return; // cancelled or failed (diagnostics already on stderr)
+
+	auto result = presetManager->openPreset (path);
+	if (!result.ok)
+		std::fprintf (stderr, "%s\n", result.error.c_str ()); // keep the current session and target
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::onSavePresetAs ()
+{
+	if (!presetManager)
+		return;
+
+	std::string suggested = presetManager->hasTarget ()
+	                            ? fileNameOf (presetManager->targetPath ())
+	                            : className + ".vstpreset";
+
+	pauseDirtyPoll ();
+	std::string path =
+	    runFileDialog (hwnd, CLSID_FileSaveDialog, L"Save Preset As", [&] (IFileDialog* dialog) {
+		    dialog->SetDefaultExtension (L"vstpreset");
+		    dialog->SetFileName (widenUtf8 (suggested).c_str ());
+	    });
+	resumeDirtyPoll ();
+	if (path.empty ())
+		return; // cancelled or failed
+
+	if (!presetManager->saveAs (path))
+		std::fprintf (stderr, "Warning: failed to save preset to '%s'.\n", path.c_str ());
 }
 
 //------------------------------------------------------------------------

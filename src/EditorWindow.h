@@ -30,6 +30,10 @@ public:
 	bool show ();
 	void closePlugView ();
 
+	// Set the title bar to "<class name> — <preset filename>" when a target is set (filename only),
+	// or "<class name>" alone when dormant. Called on every retarget (main.cpp's onRetarget).
+	void updateTitle ();
+
 	HWND getHwnd () const { return hwnd; }
 
 	// IPlugFrame
@@ -40,6 +44,16 @@ private:
 
 	static LRESULT CALLBACK wndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 	LRESULT proc (UINT message, WPARAM wParam, LPARAM lParam);
+
+	// File menu handlers. Open/Save-As drive a native IFileDialog; Close shares the window-X path.
+	void onOpenPreset ();
+	void onSavePresetAs ();
+	void requestClose ();
+
+	// Suspend/re-arm the 1s dirty poll around a modal file dialog (its nested loop keeps pumping
+	// WM_TIMER otherwise).
+	void pauseDirtyPoll ();
+	void resumeDirtyPoll ();
 
 	void onResize (int width, int height);
 	void constrainSizing (RECT* newSize);
@@ -56,6 +70,7 @@ private:
 
 	IPtr<IPlugView> plugView;
 	PresetManager* presetManager {nullptr};
+	std::string className;
 	HWND hwnd {nullptr};
 	std::shared_ptr<EditorWindow> self;
 

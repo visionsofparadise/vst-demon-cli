@@ -60,18 +60,32 @@ PresetManager::PresetManager (Steinberg::Vst::IComponent* component,
 }
 
 //------------------------------------------------------------------------
-PresetResult PresetManager::load ()
+void PresetManager::setTarget (const std::string& path)
 {
-	if (target.empty () || !fileExists (target))
-		return {true, {}};
+	if (path == target)
+		return;
+	target = path;
+	if (onRetarget)
+		onRetarget (target);
+}
 
-	IPtr<IBStream> stream = owned (FileStream::open (target.c_str (), "rb"));
+//------------------------------------------------------------------------
+void PresetManager::announceTarget ()
+{
+	if (!target.empty () && onRetarget)
+		onRetarget (target);
+}
+
+//------------------------------------------------------------------------
+PresetResult PresetManager::loadFile (const std::string& path)
+{
+	IPtr<IBStream> stream = owned (FileStream::open (path.c_str (), "rb"));
 	if (!stream)
-		return {false, "Could not open preset file '" + target + "' for reading."};
+		return {false, "Could not open preset file '" + path + "' for reading."};
 
 	if (!PresetFile::loadPreset (stream, componentUID, component, controller))
 		return {false,
-		        "Failed to load preset '" + target +
+		        "Failed to load preset '" + path +
 		            "': the file is unreadable or was authored for a different plugin class."};
 
 	std::vector<char> componentBytes, controllerBytes;
@@ -82,6 +96,26 @@ PresetResult PresetManager::load ()
 		haveLastWritten = true;
 	}
 
+	return {true, {}};
+}
+
+//------------------------------------------------------------------------
+PresetResult PresetManager::load ()
+{
+	if (target.empty () || !fileExists (target))
+		return {true, {}};
+
+	return loadFile (target);
+}
+
+//------------------------------------------------------------------------
+PresetResult PresetManager::openPreset (const std::string& path)
+{
+	auto result = loadFile (path);
+	if (!result.ok)
+		return result;
+
+	setTarget (path);
 	return {true, {}};
 }
 
@@ -109,9 +143,9 @@ bool PresetManager::captureState (std::vector<char>& componentBytes,
 }
 
 //------------------------------------------------------------------------
-bool PresetManager::writePreset ()
+bool PresetManager::writePreset (const std::string& path)
 {
-	std::string tmp = target + ".tmp";
+	std::string tmp = path + ".tmp";
 
 	{
 		IPtr<IBStream> stream = owned (FileStream::open (tmp.c_str (), "wb"));
@@ -122,17 +156,17 @@ bool PresetManager::writePreset ()
 		}
 		if (!PresetFile::savePreset (stream, componentUID, component, controller))
 		{
-			std::fprintf (stderr, "Failed to serialize preset state for '%s'.\n", target.c_str ());
+			std::fprintf (stderr, "Failed to serialize preset state for '%s'.\n", path.c_str ());
 			stream = nullptr;
 			DeleteFileW (widen (tmp).c_str ());
 			return false;
 		}
 	}
 
-	if (!MoveFileExW (widen (tmp).c_str (), widen (target).c_str (), MOVEFILE_REPLACE_EXISTING))
+	if (!MoveFileExW (widen (tmp).c_str (), widen (path).c_str (), MOVEFILE_REPLACE_EXISTING))
 	{
 		std::fprintf (stderr, "Failed to move '%s' over '%s' (error %lu).\n", tmp.c_str (),
-		              target.c_str (), GetLastError ());
+		              path.c_str (), GetLastError ());
 		DeleteFileW (widen (tmp).c_str ());
 		return false;
 	}
@@ -145,9 +179,6 @@ bool PresetManager::writePreset ()
 		haveLastWritten = true;
 	}
 
-	if (onSaved)
-		onSaved (target);
-
 	return true;
 }
 
@@ -156,7 +187,24 @@ bool PresetManager::save ()
 {
 	if (target.empty ())
 		return false;
-	return writePreset ();
+	if (!writePreset (target))
+		return false;
+	if (onSaved)
+		onSaved (target);
+	return true;
+}
+
+//------------------------------------------------------------------------
+bool PresetManager::saveAs (const std::string& path)
+{
+	// Write first, retarget only on success — symmetric with openPreset (a failed Save-As must not
+	// switch the auto-save target or announce a preset-path for a file that never got written).
+	if (!writePreset (path))
+		return false;
+	setTarget (path);   // fires onRetarget -> preset-path (before saved, per the event contract)
+	if (onSaved)
+		onSaved (path);
+	return true;
 }
 
 //------------------------------------------------------------------------
@@ -173,7 +221,11 @@ bool PresetManager::saveIfDirty ()
 	    controllerBytes == lastControllerState)
 		return false;
 
-	return writePreset ();
+	if (!writePreset (target))
+		return false;
+	if (onSaved)
+		onSaved (target);
+	return true;
 }
 
 } // namespace vstdemon

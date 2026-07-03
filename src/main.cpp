@@ -207,6 +207,8 @@ int main (int argc, char* argv[])
 			return 1;
 		}
 
+		// Declared after host (and presetManager): reverse-order destruction tears the window and its
+		// handler down before the provider, so no controller callback can reach a dead window.
 		auto window = vstdemon::EditorWindow::make (host.selectedClassName (), view, &presetManager);
 		if (!window)
 		{
@@ -226,8 +228,18 @@ int main (int argc, char* argv[])
 		}
 
 		emitEvent ("ready");
-		if (presetManager.hasTarget ())
-			emitPathEvent ("preset-path", presetManager.targetPath ());
+
+		// Single retarget-announcement site: every setTarget (Open, Save-As) and the initial --preset
+		// (via announceTarget below) flows through here, so "every retarget is announced" holds by
+		// construction (design-cli preset-path invariant). Wired after ready so stdout order stays
+		// ready -> preset-path, and after the window exists so the title update has a valid HWND.
+		vstdemon::EditorWindow* windowPtr = window.get ();
+		presetManager.setOnRetarget ([&, windowPtr] (const std::string& path) {
+			emitPathEvent ("preset-path", path);
+			windowPtr->updateTitle ();
+		});
+		window->updateTitle ();
+		presetManager.announceTarget ();
 
 		MSG msg;
 		while (GetMessage (&msg, nullptr, 0, 0))
