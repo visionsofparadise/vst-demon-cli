@@ -33,7 +33,8 @@ UninstallDisplayName={#AppName}
 
 [Files]
 ; The Release build must exist before ISCC runs (CI builds it first).
-Source: "..\build\Release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Ninja single-config puts the exe at build\ (not build\Release\).
+Source: "..\build\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 

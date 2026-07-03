@@ -20,14 +20,23 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Install Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup -y --no-progress
 
+      - name: Enter VS dev shell
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure
         shell: bash
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
             -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
             -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
@@ -45,7 +54,7 @@ jobs:
       - name: Package portable zip
         shell: pwsh
         run: |
-          Compress-Archive -Path build\Release\vst-demon.exe `
+          Compress-Archive -Path build\vst-demon.exe `
             -DestinationPath dist\vst-demon-win32-x64.zip -Force
 
       - name: Upload to release
