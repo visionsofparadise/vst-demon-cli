@@ -17,9 +17,13 @@ add_subdirectory(vst3sdk)
 
 add_executable(vst-demon
 	src/main.cpp
+	src/PluginHost.cpp
+	src/EditorWindow.cpp
 	vst3sdk/public.sdk/source/vst/hosting/plugprovider.cpp
 	vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
 )
+
+target_link_libraries(vst-demon PRIVATE ole32)
 
 target_include_directories(vst-demon PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/vst3sdk"
