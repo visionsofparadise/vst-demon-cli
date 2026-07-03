@@ -190,6 +190,14 @@ int main (int argc, char* argv[])
 		presetManager.setOnSaved ([] (const std::string& path) { emitPathEvent ("saved", path); });
 		presetManager.setTarget (args.preset);
 
+		auto prepared = presetManager.prepareTarget ();
+		if (!prepared.ok)
+		{
+			std::fprintf (stderr, "%s\n", prepared.error.c_str ());
+			OleUninitialize ();
+			return 1;
+		}
+
 		auto loaded2 = presetManager.load ();
 		if (!loaded2.ok)
 		{

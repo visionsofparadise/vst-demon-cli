@@ -4,6 +4,7 @@
 #include "public.sdk/source/vst/vstpresetfile.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <windows.h>
 
 using Steinberg::FUID;
@@ -32,6 +33,35 @@ bool fileExists (const std::string& path)
 {
 	DWORD attrs = GetFileAttributesW (widen (path).c_str ());
 	return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::string parentDirectory (const std::string& path)
+{
+	size_t pos = path.find_last_of ("/\\");
+	return pos == std::string::npos ? std::string () : path.substr (0, pos);
+}
+
+// Create the parent directory of `path` (recursively) if it does not already exist. Succeeds when
+// the directory exists or `path` has no directory component. On failure sets `error`.
+bool ensureParentDir (const std::string& path, std::string& error)
+{
+	std::string dir = parentDirectory (path);
+	if (dir.empty ())
+		return true;
+
+	std::wstring wdir = widen (dir);
+	DWORD attrs = GetFileAttributesW (wdir.c_str ());
+	if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
+		return true;
+
+	std::error_code ec;
+	std::filesystem::create_directories (std::filesystem::path (wdir), ec);
+	if (ec)
+	{
+		error = "Could not create directory '" + dir + "' for preset '" + path + "'.";
+		return false;
+	}
+	return true;
 }
 
 // Read a MemoryStream's full contents into a byte vector.
@@ -74,6 +104,18 @@ void PresetManager::announceTarget ()
 {
 	if (!target.empty () && onRetarget)
 		onRetarget (target);
+}
+
+//------------------------------------------------------------------------
+PresetResult PresetManager::prepareTarget ()
+{
+	if (target.empty ())
+		return {true, {}};
+
+	std::string error;
+	if (!ensureParentDir (target, error))
+		return {false, error};
+	return {true, {}};
 }
 
 //------------------------------------------------------------------------
@@ -145,6 +187,13 @@ bool PresetManager::captureState (std::vector<char>& componentBytes,
 //------------------------------------------------------------------------
 bool PresetManager::writePreset (const std::string& path)
 {
+	std::string dirError;
+	if (!ensureParentDir (path, dirError))
+	{
+		std::fprintf (stderr, "%s\n", dirError.c_str ());
+		return false;
+	}
+
 	std::string tmp = path + ".tmp";
 
 	{

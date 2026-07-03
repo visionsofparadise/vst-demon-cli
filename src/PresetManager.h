@@ -43,6 +43,12 @@ public:
 	// ready event has been emitted (so stdout order stays ready -> preset-path).
 	void announceTarget ();
 
+	// Ensure the current target's parent directory exists (create it recursively) so auto-save can
+	// write there. Called once at startup for the initial --preset; returns ok=false with a clear
+	// message if the directory cannot be created, letting the caller fail fast before opening the
+	// editor instead of surfacing a cryptic write error mid-session. No target: no-op, ok=true.
+	PresetResult prepareTarget ();
+
 	// Invoked with the target path after every successful write. Wired by main.cpp to emit the
 	// stdout {"event":"saved","path":...} event; the emitter stays in main.cpp scope.
 	void setOnSaved (std::function<void (const std::string&)> callback)
