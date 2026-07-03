@@ -59,6 +59,8 @@ private:
 	HWND hwnd {nullptr};
 	std::shared_ptr<EditorWindow> self;
 
+	bool viewAttached {false};
+
 	bool resizeViewRecursionGuard {false};
 	bool inDpiChangeState {false};
 	int dpiChangedWidth {0};

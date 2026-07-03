@@ -20,6 +20,7 @@ add_executable(vst-demon
 	src/PluginHost.cpp
 	src/EditorWindow.cpp
 	src/PresetManager.cpp
+	src/vst-demon.manifest
 	vst3sdk/public.sdk/source/vst/hosting/plugprovider.cpp
 	vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
 	vst3sdk/public.sdk/source/common/memorystream.cpp

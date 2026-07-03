@@ -123,6 +123,8 @@ bool PresetManager::writePreset ()
 		if (!PresetFile::savePreset (stream, componentUID, component, controller))
 		{
 			std::fprintf (stderr, "Failed to serialize preset state for '%s'.\n", target.c_str ());
+			stream = nullptr;
+			DeleteFileW (widen (tmp).c_str ());
 			return false;
 		}
 	}

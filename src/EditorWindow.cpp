@@ -8,6 +8,7 @@
 #include "public.sdk/source/vst/utility/stringconvert.h"
 
 #include <algorithm>
+#include <cstdio>
 
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
@@ -253,8 +254,9 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_CLOSE:
 		{
-			if (presetManager)
-				presetManager->save ();
+			if (presetManager && presetManager->hasTarget () && !presetManager->save ())
+				std::fprintf (stderr,
+				              "Warning: failed to save preset on close; state was not persisted.\n");
 			closePlugView ();
 			SetWindowLongPtr (hwnd, GWLP_USERDATA, (LONG_PTR) nullptr);
 			HWND toDestroy = hwnd;
@@ -416,6 +418,7 @@ bool EditorWindow::show ()
 		self = nullptr;
 		return false;
 	}
+	viewAttached = true;
 
 	SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
 	              SWP_NOSIZE | SWP_NOMOVE | SWP_NOCOPYBITS | SWP_SHOWWINDOW);
@@ -428,7 +431,11 @@ void EditorWindow::closePlugView ()
 	if (plugView)
 	{
 		plugView->setFrame (nullptr);
-		plugView->removed ();
+		if (viewAttached)
+		{
+			plugView->removed ();
+			viewAttached = false;
+		}
 		plugView = nullptr;
 	}
 }

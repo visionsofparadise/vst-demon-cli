@@ -57,6 +57,9 @@ def main():
     if list_offset < HEADER_SIZE or list_offset > size:
         fail(f"chunk-list offset {list_offset} out of range (file size {size})")
 
+    if size - list_offset < 8:
+        fail(f"chunk list at offset {list_offset} is truncated: only {size - list_offset} bytes remain, need 8 for the 'List' id + entry count")
+
     list_id = data[list_offset:list_offset + 4]
     if list_id != b"List":
         fail(f"chunk list id: expected b'List' at offset {list_offset}, got {list_id!r}")
