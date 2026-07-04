@@ -14,6 +14,7 @@
 - (void)openPreset:(id)sender;
 - (void)savePresetAs:(id)sender;
 - (void)closeWindow:(id)sender;
+- (void)quit:(id)sender;
 @end
 
 @implementation VSTDemonMenuTarget
@@ -34,6 +35,17 @@
 {
 	if (auto* window = vstdemon::activeMacWindow ())
 		window->requestClose ();
+}
+
+- (void)quit:(id)sender
+{
+	// Quit routes through the window's close teardown (final save + closed event + clean exit), NOT
+	// -[NSApplication terminate:], which exit()s without sending windowWillClose — that would skip the
+	// final save and the closed event, breaking the auto-save-on-close and stdout contracts.
+	if (auto* window = vstdemon::activeMacWindow ())
+		window->requestClose ();
+	else
+		vstdemon::platform::quitEventLoop ();
 }
 
 @end
@@ -63,9 +75,10 @@ void buildMenuBar ()
 	                   action:@selector (hide:)
 	            keyEquivalent:@"h"];
 	[appMenu addItem:[NSMenuItem separatorItem]];
-	[appMenu addItemWithTitle:[NSString stringWithFormat:@"Quit %@", appName]
-	                   action:@selector (terminate:)
-	            keyEquivalent:@"q"];
+	NSMenuItem* quitItem = [appMenu addItemWithTitle:[NSString stringWithFormat:@"Quit %@", appName]
+	                                          action:@selector (quit:)
+	                                   keyEquivalent:@"q"];
+	quitItem.target = gMenuTarget;
 	appMenuItem.submenu = appMenu;
 
 	NSMenuItem* fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:nil keyEquivalent:@""];
