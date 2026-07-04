@@ -1,6 +1,7 @@
 #include "EditorWindow.h"
 
 #include "PresetManager.h"
+#include "Utf8.h"
 #include "WindowMessages.h"
 
 #include "pluginterfaces/base/funknownimpl.h"
@@ -46,28 +47,6 @@ constexpr UINT kMenuSavePresetAs = 0x1002;
 constexpr UINT kMenuClose = 0x1003;
 
 const COMDLG_FILTERSPEC kPresetFilter[] = {{L"VST3 Preset (*.vstpreset)", L"*.vstpreset"}};
-
-std::wstring widenUtf8 (const std::string& s)
-{
-	if (s.empty ())
-		return {};
-	int len = MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), nullptr, 0);
-	std::wstring out (static_cast<size_t> (len), L'\0');
-	MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), out.data (), len);
-	return out;
-}
-
-std::string narrowUtf8 (const wchar_t* s)
-{
-	if (!s || !*s)
-		return {};
-	int len = WideCharToMultiByte (CP_UTF8, 0, s, -1, nullptr, 0, nullptr, nullptr);
-	if (len <= 0)
-		return {};
-	std::string out (static_cast<size_t> (len - 1), '\0');
-	WideCharToMultiByte (CP_UTF8, 0, s, -1, out.data (), len, nullptr, nullptr);
-	return out;
-}
 
 // The trailing path component (filename) of a UTF-8 path, for the title bar.
 std::string fileNameOf (const std::string& path)
@@ -551,7 +530,7 @@ void EditorWindow::updateTitle ()
 	std::string title = className;
 	if (presetManager && presetManager->hasTarget ())
 		title += " — " + fileNameOf (presetManager->targetPath ());
-	SetWindowTextW (hwnd, widenUtf8 (title).c_str ());
+	SetWindowTextW (hwnd, widen (title).c_str ());
 }
 
 namespace {
@@ -583,7 +562,7 @@ std::string runFileDialog (HWND owner, REFCLSID clsid, const wchar_t* dialogTitl
 			PWSTR widePath = nullptr;
 			if (item->GetDisplayName (SIGDN_FILESYSPATH, &widePath) == S_OK)
 			{
-				path = narrowUtf8 (widePath);
+				path = narrow (widePath);
 				CoTaskMemFree (widePath);
 			}
 			item->Release ();
@@ -653,7 +632,7 @@ void EditorWindow::onSavePresetAs ()
 		DialogScope scope (*this);
 		path = runFileDialog (hwnd, CLSID_FileSaveDialog, L"Save Preset As", [&] (IFileDialog* dialog) {
 			dialog->SetDefaultExtension (L"vstpreset");
-			dialog->SetFileName (widenUtf8 (suggested).c_str ());
+			dialog->SetFileName (widen (suggested).c_str ());
 		});
 	}
 	if (path.empty ())
@@ -694,6 +673,8 @@ tresult PLUGIN_API EditorWindow::resizeView (IPlugView* view, ViewRect* newSize)
 //------------------------------------------------------------------------
 tresult PLUGIN_API EditorWindow::queryInterface (const TUID iid, void** obj)
 {
+	if (!obj)
+		return kInvalidArgument;
 	if (Steinberg::FUnknownPrivate::iidEqual (iid, IPlugFrame::iid) ||
 	    Steinberg::FUnknownPrivate::iidEqual (iid, FUnknown::iid))
 	{

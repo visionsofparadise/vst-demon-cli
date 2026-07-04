@@ -14,6 +14,7 @@ using Steinberg::FUID;
 using Steinberg::FUnknown;
 using Steinberg::IPlugView;
 using Steinberg::IPtr;
+using Steinberg::kInvalidArgument;
 using Steinberg::kNoInterface;
 using Steinberg::kResultOk;
 using Steinberg::kResultTrue;
@@ -86,6 +87,8 @@ tresult PLUGIN_API ComponentHandler::finishGroupEdit ()
 
 tresult PLUGIN_API ComponentHandler::queryInterface (const TUID iid, void** obj)
 {
+	if (!obj)
+		return kInvalidArgument;
 	if (Steinberg::FUnknownPrivate::iidEqual (iid, IComponentHandler::iid) ||
 	    Steinberg::FUnknownPrivate::iidEqual (iid, FUnknown::iid))
 	{
