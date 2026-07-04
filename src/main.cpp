@@ -26,6 +26,16 @@ void printUsage (std::FILE* out)
 	    "  --preset <path>         Preset file to load and auto-save to.\n"
 	    "  --list                  Print the module's audio-effect class names and exit.\n"
 	    "  --help                  Print this message and exit.\n");
+#if defined(__linux__)
+	std::fprintf (
+	    out,
+	    "\n"
+	    "On Linux the editor window has no menu bar; the File actions are keyboard shortcuts:\n"
+	    "  Ctrl+O                  Open a preset (opens a file dialog).\n"
+	    "  Ctrl+Shift+S            Save the preset as (opens a file dialog).\n"
+	    "  Ctrl+W                  Close the editor.\n"
+	    "The file dialogs require 'zenity' (or 'kdialog') on PATH.\n");
+#endif
 }
 
 std::string jsonEscape (const std::string& s)

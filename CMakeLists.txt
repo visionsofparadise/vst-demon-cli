@@ -31,6 +31,16 @@ if(WIN32)
 		vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
 	)
 	target_link_libraries(vst-demon PRIVATE ole32)
+elseif(UNIX AND NOT APPLE)
+	find_package(X11 REQUIRED)
+	target_sources(vst-demon PRIVATE
+		src/linux/PlatformLinux.cpp
+		src/linux/RunLoop.cpp
+		src/linux/EditorWindowX11.cpp
+		src/linux/Dialogs.cpp
+		vst3sdk/public.sdk/source/vst/hosting/module_linux.cpp
+	)
+	target_link_libraries(vst-demon PRIVATE ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
 endif()
 
 target_include_directories(vst-demon PRIVATE
