@@ -1,0 +1,33 @@
+name: Build Check (macOS)
+
+# Temporary macOS build verification for the Phase 3 port (no Mac hardware — CI compile+link+
+# --help+codesign is the only channel). Phase 4 folds macOS into the release matrix and deletes this.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['port/macos']
+
+jobs:
+  build-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Smoke --help
+        run: ./build/vst-demon --help
+
+      - name: Ad-hoc codesign
+        run: codesign --force -s - build/vst-demon
