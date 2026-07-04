@@ -15,8 +15,8 @@ void printUsage (std::FILE* out)
 {
 	std::fprintf (
 	    out,
-	    "vst-demon --plugin <path.vst3> [--plugin-name <shell-sub-plugin>] [--preset <path.vstpreset>]\n"
-	    "vst-demon --plugin <path.vst3> --list\n"
+	    "vst-demon-cli --plugin <path.vst3> [--plugin-name <shell-sub-plugin>] [--preset <path.vstpreset>]\n"
+	    "vst-demon-cli --plugin <path.vst3> --list\n"
 	    "\n"
 	    "Opens a VST3 plugin's editor GUI in a bare host window and continuously\n"
 	    "saves the plugin's state to a .vstpreset file.\n"

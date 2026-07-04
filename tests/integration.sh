@@ -4,7 +4,7 @@
 # legs against the SDK's `again` example plugin (built from the pinned vst3sdk submodule with
 # SMTG_ENABLE_VST3_PLUGIN_EXAMPLES + SMTG_ENABLE_VSTGUI_SUPPORT); Linux needs an X server (xvfb-run).
 #
-# Usage: tests/integration.sh <vst-demon-binary> <plugin.vst3>
+# Usage: tests/integration.sh <vst-demon-cli-binary> <plugin.vst3>
 set -u
 
 BIN=$1

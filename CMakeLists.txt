@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(vst-demon
-	VERSION 0.2.1
+project(vst-demon-cli
+	VERSION 0.2.2
 	LANGUAGES CXX
 )
 
@@ -36,7 +36,7 @@ set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(vst3sdk)
 
-add_executable(vst-demon
+add_executable(vst-demon-cli
 	src/main.cpp
 	src/PluginHost.cpp
 	src/PresetManager.cpp
@@ -45,14 +45,14 @@ add_executable(vst-demon
 )
 
 if(WIN32)
-	target_sources(vst-demon PRIVATE
+	target_sources(vst-demon-cli PRIVATE
 		src/win32/EditorWindow.cpp
 		src/win32/PlatformWin32.cpp
 		src/win32/vst-demon.rc
 		src/vst-demon.manifest
 		vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
 	)
-	target_link_libraries(vst-demon PRIVATE ole32)
+	target_link_libraries(vst-demon-cli PRIVATE ole32)
 elseif(APPLE)
 	set(VSTDEMON_MAC_SOURCES
 		src/mac/AppMac.mm
@@ -60,24 +60,24 @@ elseif(APPLE)
 		src/mac/Dialogs.mm
 		vst3sdk/public.sdk/source/vst/hosting/module_mac.mm
 	)
-	target_sources(vst-demon PRIVATE ${VSTDEMON_MAC_SOURCES})
+	target_sources(vst-demon-cli PRIVATE ${VSTDEMON_MAC_SOURCES})
 	# ARC is mandatory on every Objective-C++ TU, including the SDK's module_mac.mm.
 	set_source_files_properties(${VSTDEMON_MAC_SOURCES} PROPERTIES COMPILE_OPTIONS -fobjc-arc)
-	target_link_libraries(vst-demon PRIVATE "-framework Cocoa")
+	target_link_libraries(vst-demon-cli PRIVATE "-framework Cocoa")
 elseif(UNIX AND NOT APPLE)
 	find_package(X11 REQUIRED)
-	target_sources(vst-demon PRIVATE
+	target_sources(vst-demon-cli PRIVATE
 		src/linux/PlatformLinux.cpp
 		src/linux/RunLoop.cpp
 		src/linux/EditorWindowX11.cpp
 		src/linux/Dialogs.cpp
 		vst3sdk/public.sdk/source/vst/hosting/module_linux.cpp
 	)
-	target_link_libraries(vst-demon PRIVATE ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
+	target_link_libraries(vst-demon-cli PRIVATE ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
 endif()
 
-target_include_directories(vst-demon PRIVATE
+target_include_directories(vst-demon-cli PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/vst3sdk"
 )
 
-target_link_libraries(vst-demon PRIVATE sdk_hosting)
+target_link_libraries(vst-demon-cli PRIVATE sdk_hosting)

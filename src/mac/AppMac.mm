@@ -66,7 +66,7 @@ void buildMenuBar ()
 	NSMenu* mainMenu = [NSMenu new];
 	[NSApp setMainMenu:mainMenu];
 
-	NSString* appName = @"vst-demon";
+	NSString* appName = @"vst-demon-cli";
 
 	NSMenuItem* appMenuItem = [[NSMenuItem alloc] initWithTitle:appName action:nil keyEquivalent:@""];
 	[mainMenu addItem:appMenuItem];

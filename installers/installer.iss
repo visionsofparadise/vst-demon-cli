@@ -1,14 +1,14 @@
-; Inno Setup script for vst-demon.
+; Inno Setup script for vst-demon-cli.
 ; Version is injected by CI: ISCC /DAppVersion=0.1.0 installer.iss
 ; The fallback below lets the script compile standalone for inspection.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 
-#define AppName "VST Demon"
-#define AppExeName "vst-demon.exe"
+#define AppName "VST Demon CLI"
+#define AppExeName "vst-demon-cli.exe"
 #define AppPublisherName "ZCROSS"
-#define InstallSubDir "ZCROSS\VST Demon"
+#define InstallSubDir "ZCROSS\VST Demon CLI"
 ; The system environment registry key. Single source of truth so the PATH add-guard and the
 ; uninstall RemovePath can never desync on a typo.
 #define EnvKey "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
@@ -28,7 +28,7 @@ ChangesEnvironment=yes
 ; Writing to Program Files and the system PATH requires elevation.
 PrivilegesRequired=admin
 OutputDir=..\dist
-OutputBaseFilename=vst-demon-setup-{#AppVersion}
+OutputBaseFilename=vst-demon-cli-setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

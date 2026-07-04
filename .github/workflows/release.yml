@@ -53,7 +53,7 @@ jobs:
 
       # --- Linux leg -----------------------------------------------------------
 
-      # libx11-dev builds vst-demon itself; xvfb runs the integration test headlessly; the rest are
+      # libx11-dev builds vst-demon-cli itself; xvfb runs the integration test headlessly; the rest are
       # VSTGUI build dependencies, needed only to build the `again` example plugin fixture (gtkmm
       # because the SDK's smtg_add_vstgui_subdirectory force-enables the VSTGUI standalone library,
       # which requires it on Linux — build-time only, the fixture plugin does not link it).
@@ -71,8 +71,8 @@ jobs:
       # --- Configure + build (all legs; Ninja preinstalled on ubuntu/macos) ----
 
       # VSTDEMON_BUILD_TEST_FIXTURE builds the SDK's `again` example plugin (and the VSTGUI it
-      # needs) as the integration-test fixture; the build step below only builds the vst-demon and
-      # again targets, and vst-demon's own compilation is unaffected by the flag.
+      # needs) as the integration-test fixture; the build step below only builds the vst-demon-cli and
+      # again targets, and vst-demon-cli's own compilation is unaffected by the flag.
       - name: Configure
         shell: bash
         run: |
@@ -81,7 +81,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build build --target vst-demon again
+        run: cmake --build build --target vst-demon-cli again
 
       # Open the fixture's editor, auto-close through the normal close path (--close-after-ms), and
       # assert the stdout event contract + written preset. This is each platform's behavioral gate —
@@ -90,8 +90,8 @@ jobs:
         shell: bash
         run: |
           PLUGIN=$(find build -name 'again.vst3' | head -1)
-          BIN=build/vst-demon
-          [ "${{ matrix.platform }}" = "win32" ] && BIN=build/vst-demon.exe
+          BIN=build/vst-demon-cli
+          [ "${{ matrix.platform }}" = "win32" ] && BIN=build/vst-demon-cli.exe
           if [ "${{ matrix.platform }}" = "linux" ]; then
             xvfb-run -a bash tests/integration.sh "$BIN" "$PLUGIN"
           else
@@ -111,17 +111,17 @@ jobs:
         if: matrix.platform == 'win32'
         shell: pwsh
         run: |
-          Compress-Archive -Path build\vst-demon.exe `
-            -DestinationPath dist\vst-demon-win32-x64.zip -Force
+          Compress-Archive -Path build\vst-demon-cli.exe `
+            -DestinationPath dist\vst-demon-cli-win32-x64.zip -Force
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'win32'
         uses: actions/upload-artifact@v4
         with:
-          name: vst-demon-win32-x64
+          name: vst-demon-cli-win32-x64
           path: |
-            dist/vst-demon-setup-${{ steps.version.outputs.version }}.exe
-            dist/vst-demon-win32-x64.zip
+            dist/vst-demon-cli-setup-${{ steps.version.outputs.version }}.exe
+            dist/vst-demon-cli-win32-x64.zip
           if-no-files-found: error
 
       # --- Linux packaging -----------------------------------------------------
@@ -129,14 +129,14 @@ jobs:
       - name: Package Linux tarball
         if: matrix.platform == 'linux'
         shell: bash
-        run: tar czf vst-demon-linux-x64.tar.gz -C build vst-demon
+        run: tar czf vst-demon-cli-linux-x64.tar.gz -C build vst-demon-cli
 
       - name: Upload Linux artifact
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: vst-demon-linux-x64
-          path: vst-demon-linux-x64.tar.gz
+          name: vst-demon-cli-linux-x64
+          path: vst-demon-cli-linux-x64.tar.gz
           if-no-files-found: error
 
       # --- macOS packaging -----------------------------------------------------
@@ -144,19 +144,19 @@ jobs:
       - name: Ad-hoc codesign
         if: matrix.platform == 'darwin'
         shell: bash
-        run: codesign --force -s - build/vst-demon
+        run: codesign --force -s - build/vst-demon-cli
 
       - name: Package macOS tarball
         if: matrix.platform == 'darwin'
         shell: bash
-        run: tar czf vst-demon-darwin-arm64.tar.gz -C build vst-demon
+        run: tar czf vst-demon-cli-darwin-arm64.tar.gz -C build vst-demon-cli
 
       - name: Upload macOS artifact
         if: matrix.platform == 'darwin'
         uses: actions/upload-artifact@v4
         with:
-          name: vst-demon-darwin-arm64
-          path: vst-demon-darwin-arm64.tar.gz
+          name: vst-demon-cli-darwin-arm64
+          path: vst-demon-cli-darwin-arm64.tar.gz
           if-no-files-found: error
 
   # Fan-in: publish the Release only on a tag. On a workflow_dispatch dry run
@@ -185,10 +185,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/vst-demon-setup-${{ steps.version.outputs.version }}.exe
-            artifacts/vst-demon-win32-x64.zip
-            artifacts/vst-demon-linux-x64.tar.gz
-            artifacts/vst-demon-darwin-arm64.tar.gz
+            artifacts/vst-demon-cli-setup-${{ steps.version.outputs.version }}.exe
+            artifacts/vst-demon-cli-win32-x64.zip
+            artifacts/vst-demon-cli-linux-x64.tar.gz
+            artifacts/vst-demon-cli-darwin-arm64.tar.gz
           draft: false
           prerelease: false
           generate_release_notes: true
