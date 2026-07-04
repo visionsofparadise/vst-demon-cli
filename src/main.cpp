@@ -237,16 +237,16 @@ int main (int argc, char* argv[])
 
 		emitEvent ("ready");
 
-		// Single retarget-announcement site: every setTarget (Open, Save-As) and the initial --preset
-		// (via announceTarget below) flows through here, so "every retarget is announced" holds by
-		// construction (design-cli preset-path invariant). Wired after ready so stdout order stays
-		// ready -> preset-path, and after the window exists so the title update has a valid HWND.
+		// Retarget updates the window title only (Open and Save As both retarget). The stdout events
+		// are separate: "open" fires on opens (startup --preset + File > Open Preset), "saved" on every
+		// write. Wired after the window exists so updateTitle has a valid HWND.
 		vstdemon::EditorWindow* windowPtr = window.get ();
-		presetManager.setOnRetarget ([&, windowPtr] (const std::string& path) {
-			emitPathEvent ("preset-path", path);
-			windowPtr->updateTitle ();
-		});
+		presetManager.setOnRetarget ([windowPtr] (const std::string&) { windowPtr->updateTitle (); });
+		presetManager.setOnOpened ([] (const std::string& path) { emitPathEvent ("open", path); });
 		window->updateTitle ();
+
+		// Emit the startup "open" for the initial --preset (existing or not). After ready, so stdout
+		// order is ready -> open. Dormant launch (no --preset): announceTarget no-ops.
 		presetManager.announceTarget ();
 
 		MSG msg;

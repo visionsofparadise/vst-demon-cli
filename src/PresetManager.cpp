@@ -1,5 +1,7 @@
 #include "PresetManager.h"
 
+#include "Utf8.h"
+
 #include "public.sdk/source/common/memorystream.h"
 #include "public.sdk/source/vst/vstpresetfile.h"
 
@@ -18,16 +20,6 @@ using Steinberg::Vst::PresetFile;
 namespace vstdemon {
 
 namespace {
-
-std::wstring widen (const std::string& s)
-{
-	if (s.empty ())
-		return {};
-	int len = MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), nullptr, 0);
-	std::wstring out (static_cast<size_t> (len), L'\0');
-	MultiByteToWideChar (CP_UTF8, 0, s.data (), static_cast<int> (s.size ()), out.data (), len);
-	return out;
-}
 
 bool fileExists (const std::string& path)
 {
@@ -96,14 +88,14 @@ void PresetManager::setTarget (const std::string& path)
 		return;
 	target = path;
 	if (onRetarget)
-		onRetarget (target);
+		onRetarget (target);   // title only; the open/saved events fire at their own sites
 }
 
 //------------------------------------------------------------------------
 void PresetManager::announceTarget ()
 {
-	if (!target.empty () && onRetarget)
-		onRetarget (target);
+	if (!target.empty () && onOpened)
+		onOpened (target);
 }
 
 //------------------------------------------------------------------------
@@ -157,7 +149,9 @@ PresetResult PresetManager::openPreset (const std::string& path)
 	if (!result.ok)
 		return result;
 
-	setTarget (path);
+	setTarget (path);   // fires onRetarget -> title update
+	if (onOpened)
+		onOpened (path);   // fires the "open" event (File > Open Preset)
 	return {true, {}};
 }
 
@@ -247,10 +241,11 @@ bool PresetManager::save ()
 bool PresetManager::saveAs (const std::string& path)
 {
 	// Write first, retarget only on success — symmetric with openPreset (a failed Save-As must not
-	// switch the auto-save target or announce a preset-path for a file that never got written).
+	// switch the auto-save target or emit for a file that never got written). Save As emits only the
+	// saved event (no open): the retarget updates the title, then onSaved carries the path.
 	if (!writePreset (path))
 		return false;
-	setTarget (path);   // fires onRetarget -> preset-path (before saved, per the event contract)
+	setTarget (path);   // fires onRetarget -> title only
 	if (onSaved)
 		onSaved (path);
 	return true;

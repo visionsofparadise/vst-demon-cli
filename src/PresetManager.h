@@ -17,9 +17,10 @@ struct PresetResult
 };
 
 // Owns the active save target and load/save of the plugin state to a .vstpreset file.
-// The save target is the most recently loaded or assigned path (the preset-path invariant);
-// every write is atomic (temp file + MoveFileEx replace). Last-written component and
-// controller state bytes are retained so saveIfDirty() can skip no-op writes.
+// The save target is the most recently opened or saved path; both are carried back to the caller
+// on stdout (the "open" and "saved" events), so the current target is observable. Every write is
+// atomic (temp file + MoveFileEx replace). Last-written component and controller state bytes are
+// retained so saveIfDirty() can skip no-op writes.
 class PresetManager
 {
 public:
@@ -34,13 +35,13 @@ public:
 	bool hasTarget () const { return !target.empty (); }
 
 	// Retarget the active save target. On a real change (path differs) the onRetarget callback
-	// fires — the single announcement site for the preset-path invariant (design-cli: "every
-	// retarget is announced on stdout"). No-ops when the path is unchanged.
+	// fires to refresh UI (the window title). This is title-only — the stdout events are "open"
+	// (opens) and "saved" (writes), fired at their own sites. No-ops when the path is unchanged.
 	void setTarget (const std::string& path);
 
-	// Announce the current target through onRetarget without changing it. Used once at startup to
-	// route the initial --preset target through the same single announcement path, after the
-	// ready event has been emitted (so stdout order stays ready -> preset-path).
+	// Emit the startup "open" event for the initial --preset target (onOpened), whether or not the
+	// file exists yet. Used once at startup after the ready event, so stdout order stays
+	// ready -> open. No target (dormant launch): no-op.
 	void announceTarget ();
 
 	// Ensure the current target's parent directory exists (create it recursively) so auto-save can
@@ -56,12 +57,19 @@ public:
 		onSaved = std::move (callback);
 	}
 
-	// Invoked with the new target path on every retarget (and the initial --preset via
-	// announceTarget). Wired by main.cpp to emit {"event":"preset-path",...} and update the window
-	// title. The single announcement site for the preset-path invariant.
+	// Invoked with the new target path on every retarget (Open, Save As). Wired by main.cpp to
+	// update the window title. Title only — no stdout event; the events are onOpened / onSaved.
 	void setOnRetarget (std::function<void (const std::string&)> callback)
 	{
 		onRetarget = std::move (callback);
+	}
+
+	// Invoked with the path when the target is opened: at startup for the initial --preset (existing
+	// or not, via announceTarget) and on File > Open Preset. Wired by main.cpp to emit
+	// {"event":"open","path":...}. Does NOT fire on Save As (that emits only saved).
+	void setOnOpened (std::function<void (const std::string&)> callback)
+	{
+		onOpened = std::move (callback);
 	}
 
 	// Load target into the plugin if the file exists. Missing file: no load, target unchanged,
@@ -69,8 +77,9 @@ public:
 	PresetResult load ();
 
 	// Load an explicit file into the live component/controller and retarget to it (File > Open
-	// Preset...). On success the loaded state is active and auto-save targets the new path (the
-	// onRetarget callback fires). On failure the current session and target are left unchanged.
+	// Preset...). On success the loaded state is active, auto-save targets the new path (onRetarget
+	// fires for the title), and onOpened fires (the "open" event). On failure the current session
+	// and target are left unchanged.
 	PresetResult openPreset (const std::string& path);
 
 	// Atomic write of the current plugin state to the target. No target: no-op returning false.
@@ -78,8 +87,9 @@ public:
 	bool save ();
 
 	// Write the current state to an explicit path and, only on success, retarget to it (File > Save
-	// Preset As...). Symmetric with openPreset: a failed write leaves the target and the
-	// announcement untouched. On success fires onRetarget (preset-path) then onSaved (saved).
+	// Preset As...). Symmetric with openPreset: a failed write leaves the target untouched. On
+	// success fires onRetarget (title only) then onSaved (the "saved" event). Does NOT fire onOpened
+	// — Save As is a write, not an open; its path rides on the saved event alone.
 	bool saveAs (const std::string& path);
 
 	// Capture fresh state, byte-compare to last-written; write only on difference. No target or
@@ -102,6 +112,7 @@ private:
 	std::string target;
 	std::function<void (const std::string&)> onSaved;
 	std::function<void (const std::string&)> onRetarget;
+	std::function<void (const std::string&)> onOpened;
 
 	bool haveLastWritten {false};
 	std::vector<char> lastComponentState;
