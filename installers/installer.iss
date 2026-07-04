@@ -32,7 +32,9 @@ OutputBaseFilename=vst-demon-setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\assets\icon.ico
 UninstallDisplayName={#AppName}
+UninstallDisplayIcon={app}\{#AppExeName}
 
 [Files]
 ; The Release build must exist before ISCC runs (CI builds it first).

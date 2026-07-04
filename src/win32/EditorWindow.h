@@ -27,7 +27,7 @@ class EditorWindow : public PlatformWindow,
 {
 public:
 	static std::shared_ptr<EditorWindow> make (const std::string& title, const IPtr<IPlugView>& view,
-	                                            PresetManager* presetManager);
+	                                            PresetManager* presetManager, int closeAfterMs);
 
 	~EditorWindow () noexcept override;
 
@@ -100,6 +100,7 @@ private:
 	IPtr<IPlugView> plugView;
 	PresetManager* presetManager {nullptr};
 	std::string className;
+	int closeAfterMs {0};
 	HWND hwnd {nullptr};
 	std::shared_ptr<EditorWindow> self;
 

@@ -9,9 +9,22 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
+# The SDK knobs are FORCE'd so a stray cache value can never flip them; the one sanctioned way to
+# deviate is VSTDEMON_BUILD_TEST_FIXTURE, which builds the SDK's `again` example plugin (and the
+# VSTGUI it needs) as the integration-test fixture — see tests/integration.sh.
+option(VSTDEMON_BUILD_TEST_FIXTURE "Build the SDK 'again' example plugin as the integration-test fixture" OFF)
+if(VSTDEMON_BUILD_TEST_FIXTURE)
+	set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES ON CACHE BOOL "" FORCE)
+	set(SMTG_ENABLE_VSTGUI_SUPPORT ON CACHE BOOL "" FORCE)
+	set(SMTG_RUN_VST_VALIDATOR OFF CACHE BOOL "" FORCE)
+	# Never symlink the fixture plugin into the machine's real VST3 folder (also needs privileges CI
+	# and plain user shells don't have).
+	set(SMTG_CREATE_PLUGIN_LINK OFF CACHE BOOL "" FORCE)
+else()
+	set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
+	set(SMTG_ENABLE_VSTGUI_SUPPORT OFF CACHE BOOL "" FORCE)
+endif()
 set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SMTG_ENABLE_VSTGUI_SUPPORT OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(vst3sdk)
 
@@ -27,6 +40,7 @@ if(WIN32)
 	target_sources(vst-demon PRIVATE
 		src/win32/EditorWindow.cpp
 		src/win32/PlatformWin32.cpp
+		src/win32/vst-demon.rc
 		src/vst-demon.manifest
 		vst3sdk/public.sdk/source/vst/hosting/module_win32.cpp
 	)

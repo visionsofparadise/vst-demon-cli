@@ -43,9 +43,12 @@ public:
 // shared_ptr, not unique_ptr: the Win32 window keeps a self-reference alive across the plugin's
 // IPlugFrame callbacks (enable_shared_from_this), so shared ownership is the natural fit; other
 // platforms simply make_shared their concrete window.
+// closeAfterMs > 0 arms a one-shot timer that drives the platform's normal user-close path (final
+// save, closed event) after that many milliseconds — the integration-test hook behind the
+// undocumented --close-after-ms flag. 0 disables it.
 std::shared_ptr<PlatformWindow> makePlatformWindow (const std::string& title,
                                                     const Steinberg::IPtr<Steinberg::IPlugView>& view,
-                                                    PresetManager* presetManager);
+                                                    PresetManager* presetManager, int closeAfterMs);
 
 namespace platform {
 

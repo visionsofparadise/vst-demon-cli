@@ -53,24 +53,50 @@ jobs:
 
       # --- Linux leg -----------------------------------------------------------
 
+      # libx11-dev builds vst-demon itself; xvfb runs the integration test headlessly; the rest are
+      # VSTGUI build dependencies, needed only to build the `again` example plugin fixture (gtkmm
+      # because the SDK's smtg_add_vstgui_subdirectory force-enables the VSTGUI standalone library,
+      # which requires it on Linux — build-time only, the fixture plugin does not link it).
       - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
         shell: bash
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev xvfb \
+            libfreetype-dev libfontconfig1-dev libcairo2-dev libpango1.0-dev \
+            libgtkmm-3.0-dev libsqlite3-dev libexpat1-dev \
+            libx11-xcb-dev libxcb-util-dev libxcb-cursor-dev libxcb-keysyms1-dev \
+            libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev
 
       # --- Configure + build (all legs; Ninja preinstalled on ubuntu/macos) ----
 
+      # VSTDEMON_BUILD_TEST_FIXTURE builds the SDK's `again` example plugin (and the VSTGUI it
+      # needs) as the integration-test fixture; the build step below only builds the vst-demon and
+      # again targets, and vst-demon's own compilation is unaffected by the flag.
       - name: Configure
         shell: bash
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
-            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
-            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
+            -DVSTDEMON_BUILD_TEST_FIXTURE=ON
 
       - name: Build
         shell: bash
-        run: cmake --build build
+        run: cmake --build build --target vst-demon again
+
+      # Open the fixture's editor, auto-close through the normal close path (--close-after-ms), and
+      # assert the stdout event contract + written preset. This is each platform's behavioral gate —
+      # on macOS it is the only behavioral verification the port gets (no Mac hardware).
+      - name: Integration test
+        shell: bash
+        run: |
+          PLUGIN=$(find build -name 'again.vst3' | head -1)
+          BIN=build/vst-demon
+          [ "${{ matrix.platform }}" = "win32" ] && BIN=build/vst-demon.exe
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            xvfb-run -a bash tests/integration.sh "$BIN" "$PLUGIN"
+          else
+            bash tests/integration.sh "$BIN" "$PLUGIN"
+          fi
 
       # --- Windows packaging ---------------------------------------------------
 
@@ -100,11 +126,6 @@ jobs:
 
       # --- Linux packaging -----------------------------------------------------
 
-      - name: Smoke --help (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: ./build/vst-demon --help
-
       - name: Package Linux tarball
         if: matrix.platform == 'linux'
         shell: bash
@@ -119,11 +140,6 @@ jobs:
           if-no-files-found: error
 
       # --- macOS packaging -----------------------------------------------------
-
-      - name: Smoke --help (macOS)
-        if: matrix.platform == 'darwin'
-        shell: bash
-        run: ./build/vst-demon --help
 
       - name: Ad-hoc codesign
         if: matrix.platform == 'darwin'

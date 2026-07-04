@@ -41,7 +41,7 @@ class EditorWindowMac : public PlatformWindow,
 {
 public:
 	static std::shared_ptr<EditorWindowMac> make (const std::string& title, const IPtr<IPlugView>& view,
-	                                              PresetManager* presetManager);
+	                                              PresetManager* presetManager, int closeAfterMs);
 
 	~EditorWindowMac () noexcept override;
 
@@ -85,6 +85,8 @@ private:
 	NSWindow* nsWindow {nullptr};
 	VSTDemonWindowDelegate* nsWindowDelegate {nullptr};
 	NSTimer* dirtyPollTimer {nullptr};
+	NSTimer* closeAfterTimer {nullptr};
+	int closeAfterMs {0};
 
 	bool resizeable {false};
 	bool viewAttached {false};

@@ -102,11 +102,12 @@ EditorWindowMac* activeMacWindow ()
 //------------------------------------------------------------------------
 std::shared_ptr<EditorWindowMac> EditorWindowMac::make (const std::string& title,
                                                         const IPtr<IPlugView>& view,
-                                                        PresetManager* presetManager)
+                                                        PresetManager* presetManager, int closeAfterMs)
 {
 	auto window = std::make_shared<EditorWindowMac> ();
 	window->presetManager = presetManager;
 	window->className = title;
+	window->closeAfterMs = closeAfterMs;
 	if (window->init (title, view))
 		return window;
 	return nullptr;
@@ -191,6 +192,11 @@ bool EditorWindowMac::show ()
 	                                                   block:^(NSTimer*) { saveIfDirty (); }];
 	timerActive = true;
 
+	if (closeAfterMs > 0)
+		closeAfterTimer = [NSTimer scheduledTimerWithTimeInterval:closeAfterMs / 1000.
+		                                                  repeats:NO
+		                                                    block:^(NSTimer*) { requestClose (); }];
+
 	setActiveMacWindow (this);
 	[nsWindow makeKeyAndOrderFront:nil];
 	return true;
@@ -219,6 +225,11 @@ void EditorWindowMac::onWindowWillClose ()
 		[dirtyPollTimer invalidate];
 		dirtyPollTimer = nullptr;
 		timerActive = false;
+	}
+	if (closeAfterTimer)
+	{
+		[closeAfterTimer invalidate];
+		closeAfterTimer = nullptr;
 	}
 
 	// Unconditional final save (design-cli: "final capture and write before exit"). Dormant (no
@@ -428,9 +439,9 @@ tresult PLUGIN_API EditorWindowMac::queryInterface (const TUID iid, void** obj)
 //------------------------------------------------------------------------
 std::shared_ptr<PlatformWindow> makePlatformWindow (const std::string& title,
                                                     const IPtr<IPlugView>& view,
-                                                    PresetManager* presetManager)
+                                                    PresetManager* presetManager, int closeAfterMs)
 {
-	return EditorWindowMac::make (title, view, presetManager);
+	return EditorWindowMac::make (title, view, presetManager, closeAfterMs);
 }
 
 } // namespace vstdemon

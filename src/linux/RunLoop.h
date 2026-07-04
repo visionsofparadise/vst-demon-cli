@@ -45,10 +45,18 @@ private:
 
 	void updateTimerNextFireTime (Timer& timer, TimePoint current);
 	void sortTimers ();
+	void eraseTimer (TimerId id);
 	TimePoint now ();
 
 	std::vector<Timer> timers;
 	TimerId timerIdCounter {0};
+
+	// A timer callback commonly unregisters a timer — including itself (one-shot close/save hooks) —
+	// which, if it erased from `timers` mid-dispatch, would free the std::function currently executing
+	// (and its captured `this`), a use-after-free. So while firing, unregisters are deferred into
+	// pendingUnregister and applied once dispatch completes; `timers` never mutates during a callback.
+	bool firing {false};
+	std::vector<TimerId> pendingUnregister;
 };
 
 // The Linux event loop: select() over registered file descriptors (the X connection fd is one of

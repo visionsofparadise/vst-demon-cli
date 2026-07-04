@@ -35,7 +35,7 @@ class EditorWindowX11 : public PlatformWindow,
 {
 public:
 	static std::shared_ptr<EditorWindowX11> make (const std::string& title, const IPtr<IPlugView>& view,
-	                                              PresetManager* presetManager);
+	                                              PresetManager* presetManager, int closeAfterMs);
 
 	~EditorWindowX11 () noexcept override;
 
@@ -110,6 +110,9 @@ private:
 	bool timerActive {false};
 	bool pendingSaveTimerActive {false};
 	TimerId pendingSaveTimer {0};
+	int closeAfterMs {0};
+	TimerId closeAfterTimer {0};
+	bool closeAfterTimerActive {false};
 	bool dialogOpen {false};
 	bool viewAttached {false};
 	bool resizeViewRecursionGuard {false};

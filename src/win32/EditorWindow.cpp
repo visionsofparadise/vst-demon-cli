@@ -40,6 +40,9 @@ const WCHAR* kWindowClassName = L"VSTDemon WindowClass";
 constexpr UINT_PTR kDirtyPollTimerId = 1;
 constexpr UINT kDirtyPollIntervalMs = 1000;
 
+// One-shot timer for the --close-after-ms integration-test hook (Platform.h makePlatformWindow).
+constexpr UINT_PTR kCloseAfterTimerId = 2;
+
 // File-menu command ids. design-cli's menu is exactly Open Preset..., Save Preset As..., Close —
 // no New/Recent/Save (auto-save makes plain Save meaningless).
 constexpr UINT kMenuOpenPreset = 0x1001;
@@ -167,11 +170,12 @@ DWORD computeStyle (bool resizeable)
 //------------------------------------------------------------------------
 std::shared_ptr<EditorWindow> EditorWindow::make (const std::string& title,
                                                   const IPtr<IPlugView>& view,
-                                                  PresetManager* presetManager)
+                                                  PresetManager* presetManager, int closeAfterMs)
 {
 	auto window = std::make_shared<EditorWindow> ();
 	window->presetManager = presetManager;
 	window->className = title;
+	window->closeAfterMs = closeAfterMs;
 	if (window->init (title, view))
 		return window;
 	return nullptr;
@@ -203,6 +207,7 @@ void EditorWindow::registerWindowClass (HINSTANCE instance)
 	wcex.lpfnWndProc = wndProc;
 	wcex.hInstance = instance;
 	wcex.hCursor = LoadCursor (instance, IDC_ARROW);
+	wcex.hIcon = LoadIcon (instance, MAKEINTRESOURCE (1));
 	wcex.hbrBackground = nullptr;
 	wcex.lpszClassName = kWindowClassName;
 	RegisterClassEx (&wcex);
@@ -291,6 +296,12 @@ LRESULT EditorWindow::proc (UINT message, WPARAM wParam, LPARAM lParam)
 			return TRUE;
 		}
 		case WM_TIMER:
+			if (wParam == kCloseAfterTimerId)
+			{
+				KillTimer (hwnd, kCloseAfterTimerId);
+				requestClose ();
+				return 0;
+			}
 			// dialogOpen gates the poll even though the timer is also killed around dialogs — a
 			// belt-and-braces guard shared with the posted-save path below.
 			if (wParam == kDirtyPollTimerId && presetManager && !dialogOpen)
@@ -481,6 +492,9 @@ bool EditorWindow::show ()
 
 	SetTimer (hwnd, kDirtyPollTimerId, kDirtyPollIntervalMs, nullptr);
 	timerActive = true;
+
+	if (closeAfterMs > 0)
+		SetTimer (hwnd, kCloseAfterTimerId, static_cast<UINT> (closeAfterMs), nullptr);
 
 	SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
 	              SWP_NOSIZE | SWP_NOMOVE | SWP_NOCOPYBITS | SWP_SHOWWINDOW);
@@ -696,9 +710,9 @@ tresult PLUGIN_API EditorWindow::queryInterface (const TUID iid, void** obj)
 //------------------------------------------------------------------------
 std::shared_ptr<PlatformWindow> makePlatformWindow (const std::string& title,
                                                     const IPtr<IPlugView>& view,
-                                                    PresetManager* presetManager)
+                                                    PresetManager* presetManager, int closeAfterMs)
 {
-	return EditorWindow::make (title, view, presetManager);
+	return EditorWindow::make (title, view, presetManager, closeAfterMs);
 }
 
 } // namespace vstdemon

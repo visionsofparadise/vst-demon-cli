@@ -3,6 +3,7 @@
 #include "PresetManager.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -86,6 +87,7 @@ struct Args
 	std::string plugin;
 	std::string pluginName;
 	std::string preset;
+	int closeAfterMs {0};
 	bool list {false};
 	bool help {false};
 };
@@ -126,6 +128,15 @@ int main (int argc, char* argv[])
 		{
 			if (!takeValue (argc, argv, i, "--preset", args.preset))
 				return 1;
+		}
+		else if (std::strcmp (argv[i], "--close-after-ms") == 0)
+		{
+			// Integration-test hook, deliberately absent from printUsage: close the window through the
+			// normal user-close path after N ms, so CI can exercise open→save→close headlessly.
+			std::string value;
+			if (!takeValue (argc, argv, i, "--close-after-ms", value))
+				return 1;
+			args.closeAfterMs = std::atoi (value.c_str ());
 		}
 		else
 		{
@@ -227,7 +238,8 @@ int main (int argc, char* argv[])
 
 		// Declared after host (and presetManager): reverse-order destruction tears the window and its
 		// handler down before the provider, so no controller callback can reach a dead window.
-		auto window = vstdemon::makePlatformWindow (host.selectedClassName (), view, &presetManager);
+		auto window = vstdemon::makePlatformWindow (host.selectedClassName (), view, &presetManager,
+		                                            args.closeAfterMs);
 		if (!window)
 		{
 			std::fprintf (stderr, "Failed to create editor window.\n");

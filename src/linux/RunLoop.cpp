@@ -120,16 +120,6 @@ void RunLoop::unregisterTimer (TimerId id)
 }
 
 //------------------------------------------------------------------------
-namespace {
-
-bool timevalEmpty (const timeval& val)
-{
-	return val.tv_sec == 0 && val.tv_usec == 0;
-}
-
-} // namespace
-
-//------------------------------------------------------------------------
 void RunLoop::start ()
 {
 	running = true;
@@ -140,21 +130,27 @@ void RunLoop::start ()
 	XSync (display, False);
 	handleEvents ();
 
-	timeval selectTimeout {};
 	while (running)
 	{
-		doSelect (timevalEmpty (selectTimeout) ? nullptr : &selectTimeout);
+		// Fire due timers and get the wait BEFORE selecting. Ordering matters: a plugin editor may
+		// produce no X events on our connection after attach (VSTGUI editors render on their own
+		// connection; only JUCE-style editors reliably wake ours), so a select() that ran first with
+		// no timeout would block forever and no timer — dirty poll or the close-after hook — would
+		// ever fire. Computing the timeout from the timer queue first bounds the wait to the next
+		// timer.
 		auto nextFireTime = timerProcessor.handleTimersAndReturnNextFireTimeInMs ();
-		if (nextFireTime == TimerProcessor::noTimers)
-		{
-			selectTimeout = {};
-		}
-		else
+		if (!running)
+			break; // a timer callback (e.g. close) may have stopped the loop
+
+		timeval selectTimeout {};
+		timeval* timeout = nullptr;
+		if (nextFireTime != TimerProcessor::noTimers)
 		{
 			selectTimeout.tv_sec = static_cast<time_t> (nextFireTime / 1000);
-			selectTimeout.tv_usec =
-			    static_cast<suseconds_t> ((nextFireTime - (selectTimeout.tv_sec * 1000)) * 1000);
+			selectTimeout.tv_usec = static_cast<suseconds_t> ((nextFireTime % 1000) * 1000);
+			timeout = &selectTimeout;
 		}
+		doSelect (timeout);
 	}
 
 	unregisterFileDescriptor (fd);
@@ -185,6 +181,9 @@ uint64_t TimerProcessor::handleTimersAndReturnNextFireTimeInMs ()
 		updateTimerNextFireTime (timer, current);
 	}
 
+	// Defer unregisters across the whole dispatch: a callback (e.g. a one-shot close/save hook) may
+	// unregister itself, and erasing the executing std::function would free its captures mid-call.
+	firing = true;
 	for (auto id : timersToFire)
 	{
 		for (auto& timer : timers)
@@ -196,6 +195,10 @@ uint64_t TimerProcessor::handleTimersAndReturnNextFireTimeInMs ()
 			}
 		}
 	}
+	firing = false;
+	for (auto id : pendingUnregister)
+		eraseTimer (id);
+	pendingUnregister.clear ();
 
 	// A fired callback may have unregistered the last timer — re-check before touching front().
 	if (timers.empty ())
@@ -251,6 +254,18 @@ TimerId TimerProcessor::registerTimer (TimerIntervalMs interval, const TimerCall
 
 //------------------------------------------------------------------------
 void TimerProcessor::unregisterTimer (TimerId id)
+{
+	// During dispatch, defer: erasing now could free the executing callback (see handleTimers).
+	if (firing)
+	{
+		pendingUnregister.push_back (id);
+		return;
+	}
+	eraseTimer (id);
+}
+
+//------------------------------------------------------------------------
+void TimerProcessor::eraseTimer (TimerId id)
 {
 	for (auto it = timers.begin (), end = timers.end (); it != end; ++it)
 	{

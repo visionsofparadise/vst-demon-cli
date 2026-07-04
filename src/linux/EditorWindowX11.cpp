@@ -65,11 +65,12 @@ void sendXEmbedMessage (Display* dpy, Window w, Atom messageType, long message, 
 //------------------------------------------------------------------------
 std::shared_ptr<EditorWindowX11> EditorWindowX11::make (const std::string& title,
                                                         const IPtr<IPlugView>& view,
-                                                        PresetManager* presetManager)
+                                                        PresetManager* presetManager, int closeAfterMs)
 {
 	auto window = std::make_shared<EditorWindowX11> ();
 	window->presetManager = presetManager;
 	window->className = title;
+	window->closeAfterMs = closeAfterMs;
 	if (window->init (title, view))
 		return window;
 	return nullptr;
@@ -109,12 +110,14 @@ bool EditorWindowX11::init (const std::string& title, const IPtr<IPlugView>& vie
 	currentWidth = plugViewSize.right - plugViewSize.left;
 	currentHeight = plugViewSize.bottom - plugViewSize.top;
 
-	xEmbedInfoAtom = XInternAtom (xDisplay, "_XEMBED_INFO", true);
-	if (xEmbedInfoAtom == None)
-	{
-		std::fprintf (stderr, "_XEMBED_INFO atom unavailable — no XEMBED-capable environment.\n");
-		return false;
-	}
+	// Intern _XEMBED_INFO unconditionally (only_if_exists=false). We need a valid atom both to read
+	// the plugin window's _XEMBED_INFO property and to name that property's type. An earlier
+	// only_if_exists=true probe interned it only if some client already had — which JUCE-based
+	// editors happen to do at module load, but VSTGUI-based editors do not until the editor is
+	// created; the probe therefore spuriously reported "no XEMBED environment" and refused to open
+	// any non-JUCE editor. Actual XEMBED capability is checked in show() via
+	// isPlatformTypeSupported(kPlatformTypeX11EmbedWindowID).
+	xEmbedInfoAtom = XInternAtom (xDisplay, "_XEMBED_INFO", false);
 
 	int screen = DefaultScreen (xDisplay);
 
@@ -226,6 +229,17 @@ bool EditorWindowX11::show ()
 	                                                     [this] (TimerId) { saveIfDirty (); });
 	timerActive = true;
 
+	if (closeAfterMs > 0)
+	{
+		closeAfterTimerActive = true;
+		closeAfterTimer = RunLoop::instance ().registerTimer (
+		    static_cast<TimerIntervalMs> (closeAfterMs), [this] (TimerId id) {
+			    RunLoop::instance ().unregisterTimer (id);
+			    closeAfterTimerActive = false;
+			    requestClose ();
+		    });
+	}
+
 	return true;
 }
 
@@ -256,6 +270,11 @@ void EditorWindowX11::onClose ()
 	{
 		RunLoop::instance ().unregisterTimer (pendingSaveTimer);
 		pendingSaveTimerActive = false;
+	}
+	if (closeAfterTimerActive)
+	{
+		RunLoop::instance ().unregisterTimer (closeAfterTimer);
+		closeAfterTimerActive = false;
 	}
 
 	// Unconditional final save (design-cli: "final capture and write before exit"). Dormant (no
@@ -634,9 +653,9 @@ tresult PLUGIN_API EditorWindowX11::queryInterface (const TUID iid, void** obj)
 //------------------------------------------------------------------------
 std::shared_ptr<PlatformWindow> makePlatformWindow (const std::string& title,
                                                     const IPtr<IPlugView>& view,
-                                                    PresetManager* presetManager)
+                                                    PresetManager* presetManager, int closeAfterMs)
 {
-	return EditorWindowX11::make (title, view, presetManager);
+	return EditorWindowX11::make (title, view, presetManager, closeAfterMs);
 }
 
 } // namespace vstdemon

@@ -1,10 +1,10 @@
-# vst-demon
+<p align="center">
+  <img src="assets/vst-demon-logo-spin.webp" alt="VST Demon" width="440">
+</p>
+
+# vst-demon-cli
 
 A `.vstpreset` editor. `vst-demon` opens a VST3 plugin's own GUI in a bare host window and continuously saves the plugin's state to a `.vstpreset` file as you edit. There is no audio path — it hosts the editor only. Close the window and the state is saved; reopen with the same file and the exact state is restored.
-
-It fills a gap: authoring `.vstpreset` files otherwise requires a DAW or Steinberg's VST3PluginTestHost. `vst-demon` needs neither — point it at a `.vst3`, turn knobs, close.
-
-Windows is the primary, fully-verified platform. Linux is supported and verified. macOS is **experimental** — see [Platform notes](#platform-notes).
 
 ## Installation
 
@@ -13,9 +13,8 @@ Each [release](https://github.com/visionsofparadise/vst-demon-cli/releases) atta
 ### Windows
 
 - **Installer** — `vst-demon-setup-<version>.exe`. Installs `vst-demon.exe` to `C:\Program Files\ZCROSS\VST Demon\` and adds that directory to your system `PATH`, so `vst-demon` works from any shell. The uninstaller removes both. (Requires administrator rights; open a new shell after installing so the updated PATH is picked up.)
-- **Portable** — `vst-demon-win32-x64.zip`. Unzip anywhere and run `vst-demon.exe` directly. No install, no PATH change, no admin. This is the artifact to embed in another application.
 
-The binary is unsigned, so Windows SmartScreen shows a "Windows protected your PC" prompt on first run of the installer or the exe. To run it: click **More info**, then **Run anyway**. (You can also right-click the file → **Properties** → check **Unblock** → **OK** before running.)
+- **Portable** — `vst-demon-win32-x64.zip`. Unzip anywhere and run `vst-demon.exe` directly. No install, no PATH change, no admin. This is the artifact to embed in another application.
 
 ### Linux
 
@@ -25,11 +24,9 @@ The binary is unsigned, so Windows SmartScreen shows a "Windows protected your P
 
 See [Platform notes](#platform-notes) for the plugin-path requirement and keyboard shortcuts.
 
-### macOS (experimental)
+### macOS
 
 - **`vst-demon-darwin-arm64.tar.gz`** (Apple Silicon). Extract with `tar xzf vst-demon-darwin-arm64.tar.gz`.
-
-macOS support is **experimental**: the binary is built and smoke-tested in CI, but its editor behavior is unverified on real hardware. Reports welcome. See [Platform notes](#platform-notes) for the Gatekeeper unblock step.
 
 ## Usage
 
@@ -63,7 +60,7 @@ vst-demon --plugin "C:\Program Files\Common Files\VST3\WaveShell3-VST3 10.0_x64.
 ["REQ 2 Mono","REQ 2 Stereo","REQ 4 Mono","REQ 4 Stereo","REQ 6 Mono","REQ 6 Stereo"]
 ```
 
-Listing and opening a shell's sub-plugins works for any vendor's shell, but Waves *state* does not round-trip through a standard `.vstpreset` — see [Limitations](#limitations).
+Listing and opening a shell's sub-plugins works for any vendor's shell, but Waves _state_ does not round-trip through a standard `.vstpreset` — see [Limitations](#limitations).
 
 ### Auto-save
 
@@ -76,36 +73,16 @@ The **Open Preset** and **Save Preset As** actions open native file dialogs and 
 - **Windows / macOS** — a **File** menu: **Open Preset...**, **Save Preset As...**, **Close** (macOS shortcuts ⌘O / ⇧⌘S / ⌘W).
 - **Linux** — there is no menu bar; the actions are keyboard shortcuts: **Ctrl+O** (Open Preset), **Ctrl+Shift+S** (Save Preset As), **Ctrl+W** (Close).
 
-## Platform notes
-
-### Linux
-
-- **Plugin path is a bundle directory.** `--plugin` must point at a VST3 bundle directory, not a bare `.so`. A Linux VST3 has the layout `<Name>.vst3/Contents/x86_64-linux/<Name>.so`; pass the top-level `<Name>.vst3` directory. Pointing `--plugin` at a bare `.so` file produces a clear error (the module is not a bundle directory). Plugins normally live in `~/.vst3/`.
-- **File dialogs need `zenity` (or `kdialog`).** The Open/Save dialogs are a `zenity` subprocess, falling back to `kdialog` if `zenity` is absent. One of them must be on `PATH`; if neither is found the dialog request prints a message to stderr and does nothing.
-- **No menu bar.** The File actions are the keyboard shortcuts listed above (Ctrl+O / Ctrl+Shift+S / Ctrl+W).
-- **WSLg.** On Windows 11, `vst-demon` runs under WSLg (Windows' built-in WSL GUI support) — the plugin editor renders on the Windows desktop. Install the Linux build inside your WSL distribution and run it there.
-
-### macOS (experimental)
-
-- **Experimental.** The macOS binary is built and `--help`-smoke-tested in CI but has not been verified on Apple hardware. It may not work; reports are welcome.
-- **Gatekeeper unblock.** The binary carries only an ad-hoc signature (`codesign -s -`), not a Developer ID, so Gatekeeper blocks it on first run as a downloaded, unidentified binary. To run it: **right-click** (or Control-click) the `vst-demon` binary in Finder → **Open** → confirm in the dialog. From a terminal you can instead strip the quarantine attribute:
-
-  ```
-  xattr -d com.apple.quarantine vst-demon
-  ```
-
-  This is the macOS analogue of the Windows SmartScreen unblock above.
-
 ## stdout event contract
 
 `vst-demon` emits line-delimited JSON to stdout — one object per line, nothing else. All logging and diagnostics go to stderr, so stdout is a clean event stream a parent process can parse. The file on disk is the source of truth; the tool is fully functional with stdout ignored.
 
-| Event                            | When                                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `{"event":"ready"}`              | the editor window is up                                                                            |
-| `{"event":"open","path":...}`    | the auto-save target was opened: at startup when `--preset` is given (even if the file does not exist yet), and on **Open Preset** |
-| `{"event":"saved","path":...}`   | a write to the preset file completed (edit / poll / first create / close, and **Save Preset As**)  |
-| `{"event":"closed"}`             | before a clean exit                                                                                |
+| Event                          | When                                                                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `{"event":"ready"}`            | the editor window is up                                                                                                            |
+| `{"event":"open","path":...}`  | the auto-save target was opened: at startup when `--preset` is given (even if the file does not exist yet), and on **Open Preset** |
+| `{"event":"saved","path":...}` | a write to the preset file completed (edit / poll / first create / close, and **Save Preset As**)                                  |
+| `{"event":"closed"}`           | before a clean exit                                                                                                                |
 
 `open` fires only on opens. **Save Preset As** does not emit `open` — it is a write, so it emits `saved` alone (carrying the new path). Both `open` and `saved` carry the current target path, so a parent can track it from either.
 
@@ -125,22 +102,29 @@ Paths are JSON-escaped, so Windows backslashes appear doubled. A typical session
 ["OTT"]
 ```
 
-### Exit codes
-
-`0` on a clean close. Nonzero, with a message on stderr, for:
-
-- an unknown or malformed argument;
-- a missing or unloadable plugin file (on Linux, this includes a `--plugin` that is a bare `.so` rather than a `.vst3` bundle directory);
-- an unknown `--plugin-name` class;
-- a plugin that provides no editor view;
-- an unloadable preset (unreadable, or authored for a different plugin class);
-- the preset's parent directory could not be created;
-- an empty plugin factory — this gets its own message, since for a Waves shell it means the Waves license is inactive in Waves Central.
-
 ## Limitations
 
 - **Waves shell plugins.** Sub-plugins enumerate (`--list`) and open (`--plugin-name`) correctly, but their state does not round-trip through a standard `.vstpreset`: reopening a `vst-demon`-written Waves preset resets the plugin to its default, because the Waves component's `setState` does not reconstruct edited state from the standard VST3 component chunk (the same limitation reproduces in Pedalboard). The container `vst-demon` writes is structurally valid — this is a Waves property, not a writer defect. Author Waves presets in a Waves-aware host.
-- **macOS is experimental.** Built in CI, unverified on hardware — see [Platform notes](#macos-experimental).
+
+## Platform notes
+
+### Linux
+
+- **Plugin path is a bundle directory.** `--plugin` must point at a VST3 bundle directory, not a bare `.so`. A Linux VST3 has the layout `<Name>.vst3/Contents/x86_64-linux/<Name>.so`; pass the top-level `<Name>.vst3` directory. Pointing `--plugin` at a bare `.so` file produces a clear error (the module is not a bundle directory). Plugins normally live in `~/.vst3/`.
+- **File dialogs need `zenity` (or `kdialog`).** The Open/Save dialogs are a `zenity` subprocess, falling back to `kdialog` if `zenity` is absent. One of them must be on `PATH`; if neither is found the dialog request prints a message to stderr and does nothing.
+- **No menu bar.** The File actions are the keyboard shortcuts listed above (Ctrl+O / Ctrl+Shift+S / Ctrl+W).
+- **WSLg.** On Windows 11, `vst-demon` runs under WSLg (Windows' built-in WSL GUI support) — the plugin editor renders on the Windows desktop. Install the Linux build inside your WSL distribution and run it there.
+
+### macOS (experimental)
+
+- **Experimental.** The macOS binary is built and `--help`-smoke-tested in CI but has not been verified on Apple hardware. It may not work; reports are welcome.
+- **Gatekeeper unblock.** The binary carries only an ad-hoc signature (`codesign -s -`), not a Developer ID, so Gatekeeper blocks it on first run as a downloaded, unidentified binary. To run it: **right-click** (or Control-click) the `vst-demon` binary in Finder → **Open** → confirm in the dialog. From a terminal you can instead strip the quarantine attribute:
+
+    ```
+    xattr -d com.apple.quarantine vst-demon
+    ```
+
+    This is the macOS analogue of the Windows SmartScreen unblock above.
 
 ## License
 
