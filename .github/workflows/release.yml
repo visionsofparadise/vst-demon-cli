@@ -20,13 +20,9 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Install Ninja
+      - name: Install Ninja and Inno Setup
         shell: pwsh
-        run: choco install ninja -y --no-progress
-
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup -y --no-progress
+        run: choco install ninja innosetup -y --no-progress
 
       - name: Enter VS dev shell
         uses: ilammy/msvc-dev-cmd@v1
@@ -43,7 +39,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build build --config Release
+        run: cmake --build build
 
       - name: Package installer
         shell: pwsh

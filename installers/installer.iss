@@ -9,6 +9,9 @@
 #define AppExeName "vst-demon.exe"
 #define AppPublisherName "ZCROSS"
 #define InstallSubDir "ZCROSS\VST Demon"
+; The system environment registry key. Single source of truth so the PATH add-guard and the
+; uninstall RemovePath can never desync on a typo.
+#define EnvKey "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 
 [Setup]
 AppId={{B7E4C2A1-9F3D-4A6E-8C1B-6D2E5A9F4C10}
@@ -39,9 +42,10 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-; Append the install dir to the system PATH, guarded so re-install never double-adds.
-Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
-    ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; \
+; Append the install dir to the system PATH, guarded so re-install never double-adds. ValueData is
+; built in code so an empty existing Path yields "<dir>" rather than a leading-semicolon ";<dir>".
+Root: HKLM; Subkey: "{#EnvKey}"; \
+    ValueType: expandsz; ValueName: "Path"; ValueData: "{code:BuildNewPath}"; \
     Check: NeedsAddPath(ExpandConstant('{app}'))
 
 [Code]
@@ -51,9 +55,7 @@ function NeedsAddPath(Param: string): Boolean;
 var
   OrigPath: string;
 begin
-  if not RegQueryStringValue(HKLM,
-    'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
-    'Path', OrigPath) then
+  if not RegQueryStringValue(HKLM, '{#EnvKey}', 'Path', OrigPath) then
   begin
     Result := True;
     exit;
@@ -61,31 +63,45 @@ begin
   Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
 end;
 
-{ Remove the install dir from the system PATH on uninstall. }
+{ The new PATH value for the [Registry] append: existing PATH with the install dir appended.
+  Avoids a leading semicolon when the existing PATH is empty (";<dir>" would be a stray empty
+  segment). Guarded by NeedsAddPath, so it only runs when the dir is not already present. }
+function BuildNewPath(Param: string): string;
+var
+  OrigPath: string;
+begin
+  if not RegQueryStringValue(HKLM, '{#EnvKey}', 'Path', OrigPath) then
+    OrigPath := '';
+  if OrigPath = '' then
+    Result := ExpandConstant('{app}')
+  else
+    Result := OrigPath + ';' + ExpandConstant('{app}');
+end;
+
+{ Remove the install dir from the system PATH on uninstall. Exact-segment match (leading + trailing
+  semicolon) so a prefix collision — "VST Demon" vs "VST Demon Pro" — is never removed by mistake. }
 procedure RemovePath(Dir: string);
 var
   OrigPath: string;
   NewPath: string;
   P: Integer;
 begin
-  if not RegQueryStringValue(HKLM,
-    'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
-    'Path', OrigPath) then
+  if not RegQueryStringValue(HKLM, '{#EnvKey}', 'Path', OrigPath) then
     exit;
-  { Match the segment with a leading semicolon, tolerant of case. }
+  { Match the segment framed by semicolons, tolerant of case. }
   NewPath := ';' + OrigPath + ';';
   P := Pos(';' + Uppercase(Dir) + ';', Uppercase(NewPath));
   if P = 0 then
     exit;
+  { Delete the segment and its trailing semicolon, collapsing ";<dir>;" to ";" so removing a
+    middle entry never leaves an empty ";;" segment behind. }
   Delete(NewPath, P, Length(Dir) + 1);
-  { Strip the sentinel semicolons we added. }
+  { Strip the sentinel semicolons we framed with. }
   if (Length(NewPath) > 0) and (NewPath[1] = ';') then
     Delete(NewPath, 1, 1);
   if (Length(NewPath) > 0) and (NewPath[Length(NewPath)] = ';') then
     Delete(NewPath, Length(NewPath), 1);
-  RegWriteExpandStringValue(HKLM,
-    'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
-    'Path', NewPath);
+  RegWriteExpandStringValue(HKLM, '{#EnvKey}', 'Path', NewPath);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
