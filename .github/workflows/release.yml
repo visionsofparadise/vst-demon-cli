@@ -3,31 +3,62 @@ name: Release
 on:
   push:
     tags: ['v*']
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+          - os: ubuntu-22.04
+            platform: linux
+          - os: macos-15
+            platform: darwin
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Derive version from tag
+      # On a tag run GITHUB_REF_NAME is the tag (v1.2.3) → strip the v. On a
+      # workflow_dispatch dry run there is no tag, so use a placeholder that still
+      # produces valid ISCC/asset naming without publishing anything.
+      - name: Derive version
         id: version
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- Windows leg ---------------------------------------------------------
 
       - name: Install Ninja and Inno Setup
+        if: matrix.platform == 'win32'
         shell: pwsh
         run: choco install ninja innosetup -y --no-progress
 
       - name: Enter VS dev shell
+        if: matrix.platform == 'win32'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+
+      # --- Linux leg -----------------------------------------------------------
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
+      # --- Configure + build (all legs; Ninja preinstalled on ubuntu/macos) ----
 
       - name: Configure
         shell: bash
@@ -41,24 +72,108 @@ jobs:
         shell: bash
         run: cmake --build build
 
+      # --- Windows packaging ---------------------------------------------------
+
       - name: Package installer
+        if: matrix.platform == 'win32'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           iscc /DAppVersion=${{ steps.version.outputs.version }} installers\installer.iss
 
       - name: Package portable zip
+        if: matrix.platform == 'win32'
         shell: pwsh
         run: |
           Compress-Archive -Path build\vst-demon.exe `
             -DestinationPath dist\vst-demon-win32-x64.zip -Force
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: vst-demon-win32-x64
+          path: |
             dist/vst-demon-setup-${{ steps.version.outputs.version }}.exe
             dist/vst-demon-win32-x64.zip
+          if-no-files-found: error
+
+      # --- Linux packaging -----------------------------------------------------
+
+      - name: Smoke --help (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: ./build/vst-demon --help
+
+      - name: Package Linux tarball
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: tar czf vst-demon-linux-x64.tar.gz -C build vst-demon
+
+      - name: Upload Linux artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vst-demon-linux-x64
+          path: vst-demon-linux-x64.tar.gz
+          if-no-files-found: error
+
+      # --- macOS packaging -----------------------------------------------------
+
+      - name: Smoke --help (macOS)
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: ./build/vst-demon --help
+
+      - name: Ad-hoc codesign
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: codesign --force -s - build/vst-demon
+
+      - name: Package macOS tarball
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: tar czf vst-demon-darwin-arm64.tar.gz -C build vst-demon
+
+      - name: Upload macOS artifact
+        if: matrix.platform == 'darwin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vst-demon-darwin-arm64
+          path: vst-demon-darwin-arm64.tar.gz
+          if-no-files-found: error
+
+  # Fan-in: publish the Release only on a tag. On a workflow_dispatch dry run
+  # there is no tag, so this job is skipped and nothing is published.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/vst-demon-setup-${{ steps.version.outputs.version }}.exe
+            artifacts/vst-demon-win32-x64.zip
+            artifacts/vst-demon-linux-x64.tar.gz
+            artifacts/vst-demon-darwin-arm64.tar.gz
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: true
