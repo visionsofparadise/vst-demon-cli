@@ -5,6 +5,14 @@ project(vst-demon
 	LANGUAGES CXX
 )
 
+# On macOS the sources include Objective-C++ (.mm), and building the integration-test fixture pulls
+# in VSTGUI's Cocoa backend, whose CMake needs OBJCXX formally enabled (CMAKE_OBJCXX_COMPILE_OBJECT).
+# Declared here rather than in project(LANGUAGES) so the Windows/Linux legs never probe an ObjC++
+# compiler they don't have.
+if(APPLE)
+	enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
