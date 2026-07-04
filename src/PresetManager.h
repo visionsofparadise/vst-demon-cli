@@ -19,7 +19,7 @@ struct PresetResult
 // Owns the active save target and load/save of the plugin state to a .vstpreset file.
 // The save target is the most recently opened or saved path; both are carried back to the caller
 // on stdout (the "open" and "saved" events), so the current target is observable. Every write is
-// atomic (temp file + MoveFileEx replace). Last-written component and controller state bytes are
+// atomic (temp file + rename replace). Last-written component and controller state bytes are
 // retained so saveIfDirty() can skip no-op writes.
 class PresetManager
 {
@@ -101,7 +101,7 @@ private:
 	// Shared by load() (startup --preset) and openPreset() (File > Open Preset...).
 	PresetResult loadFile (const std::string& path);
 	bool captureState (std::vector<char>& componentBytes, std::vector<char>& controllerBytes) const;
-	// Atomic write of the current state to an explicit path (temp + MoveFileEx). Refreshes the
+	// Atomic write of the current state to an explicit path (temp + rename). Refreshes the
 	// last-written baseline; does NOT fire onSaved (the caller does, after any retarget).
 	bool writePreset (const std::string& path);
 

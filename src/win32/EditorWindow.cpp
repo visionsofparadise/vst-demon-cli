@@ -1,7 +1,7 @@
 #include "EditorWindow.h"
 
-#include "PresetManager.h"
-#include "Utf8.h"
+#include "../PresetManager.h"
+#include "../Utf8.h"
 #include "WindowMessages.h"
 
 #include "pluginterfaces/base/funknownimpl.h"
@@ -520,7 +520,7 @@ void EditorWindow::requestClose ()
 	HWND toDestroy = hwnd;
 	hwnd = nullptr;
 	DestroyWindow (toDestroy);
-	PostQuitMessage (0);
+	platform::quitEventLoop ();
 	self = nullptr;
 }
 
@@ -531,6 +531,13 @@ void EditorWindow::updateTitle ()
 	if (presetManager && presetManager->hasTarget ())
 		title += " — " + fileNameOf (presetManager->targetPath ());
 	SetWindowTextW (hwnd, widen (title).c_str ());
+}
+
+//------------------------------------------------------------------------
+void EditorWindow::postSaveRequest ()
+{
+	if (hwnd)
+		PostMessage (hwnd, WM_VSTDEMON_SAVE, 0, 0);
 }
 
 namespace {
@@ -684,6 +691,14 @@ tresult PLUGIN_API EditorWindow::queryInterface (const TUID iid, void** obj)
 	}
 	*obj = nullptr;
 	return kNoInterface;
+}
+
+//------------------------------------------------------------------------
+std::shared_ptr<PlatformWindow> makePlatformWindow (const std::string& title,
+                                                    const IPtr<IPlugView>& view,
+                                                    PresetManager* presetManager)
+{
+	return EditorWindow::make (title, view, presetManager);
 }
 
 } // namespace vstdemon

@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef _WIN32
+
 #include <string>
 #include <windows.h>
 
@@ -31,3 +33,5 @@ inline std::string narrow (const wchar_t* s)
 }
 
 } // namespace vstdemon
+
+#endif // _WIN32

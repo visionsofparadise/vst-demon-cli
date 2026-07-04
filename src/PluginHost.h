@@ -6,10 +6,10 @@
 
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
-#include <windows.h>
 
 namespace vstdemon {
 
@@ -20,17 +20,18 @@ struct HostResult
 };
 
 // The host's edit-notification handler. Installed unconditionally on the controller before the
-// view is created. The save-requesting callbacks (endEdit / restartComponent / setDirty) post
-// WM_VSTDEMON_SAVE to the editor window rather than saving inline, so the actual save runs on the
-// single message-loop code path shared with the 1s dirty-poll timer. All callbacks arrive on the
-// UI thread; no locking. Lifetime is owned by PluginHost, so the FUnknown refcount is a stub.
+// view is created. The save-requesting callbacks (endEdit / restartComponent / setDirty) route
+// through a save-request callback (the platform window's postSaveRequest) rather than saving
+// inline, so the actual save runs on the single run-loop code path shared with the 1s dirty-poll
+// timer. All callbacks arrive on the UI thread; no locking. Lifetime is owned by PluginHost, so the
+// FUnknown refcount is a stub.
 class ComponentHandler : public Steinberg::Vst::IComponentHandler,
                          public Steinberg::Vst::IComponentHandler2
 {
 public:
-	// The window to post save requests to. Set after the editor window is created; until then
-	// callbacks are dropped (no window to catch the message yet, and startup load fires no edits).
-	void setWindow (HWND window) { hwnd = window; }
+	// The save-request sink to route edits to. Set after the editor window is created; until then
+	// callbacks are dropped (no window to catch the request yet, and startup load fires no edits).
+	void setSaveRequest (std::function<void ()> callback) { requestSaveCallback = std::move (callback); }
 
 	// IComponentHandler
 	Steinberg::tresult PLUGIN_API beginEdit (Steinberg::Vst::ParamID id) override;
@@ -53,7 +54,7 @@ public:
 private:
 	void requestSave ();
 
-	HWND hwnd {nullptr};
+	std::function<void ()> requestSaveCallback;
 };
 
 class PluginHost
@@ -84,7 +85,7 @@ public:
 	bool getComponentUID (Steinberg::FUID& uid) const;
 	Steinberg::IPtr<Steinberg::IPlugView> createView () const;
 
-	// The installed edit-notification handler. Wire its target window after the editor is created.
+	// The installed edit-notification handler. Wire its save-request sink after the editor is created.
 	ComponentHandler& componentHandler () { return handler; }
 
 	const std::string& selectedClassName () const { return selectedName; }

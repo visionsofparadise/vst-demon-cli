@@ -1,6 +1,6 @@
 #include "PluginHost.h"
 
-#include "WindowMessages.h"
+#include "Platform.h"
 
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/gui/iplugview.h"
@@ -37,8 +37,8 @@ namespace vstdemon {
 //------------------------------------------------------------------------
 void ComponentHandler::requestSave ()
 {
-	if (hwnd)
-		PostMessage (hwnd, WM_VSTDEMON_SAVE, 0, 0);
+	if (requestSaveCallback)
+		requestSaveCallback ();
 }
 
 tresult PLUGIN_API ComponentHandler::beginEdit (ParamID)
@@ -141,13 +141,13 @@ PluginHost::~PluginHost ()
 	// Uninstall the edit-notification handler before teardown: the editor window it posts to is
 	// already destroyed by this point (main.cpp destroys the window before the host), and
 	// deactivation/release below can drive controller callbacks. Deregistering here — and dropping
-	// the handler's stale HWND — keeps any late callback from reaching a dead window.
+	// the handler's stale save-request callback — keeps any late callback from reaching a dead window.
 	if (plugProvider)
 	{
 		if (auto* controller = plugProvider->getControllerPtr ().get ())
 			controller->setComponentHandler (nullptr);
 	}
-	handler.setWindow (nullptr);
+	handler.setSaveRequest (nullptr);
 
 	if (componentActivated && plugProvider)
 	{
@@ -173,6 +173,13 @@ HostResult PluginHost::loadModule (const std::string& pluginPath)
 		std::string reason = "Could not load module '" + pluginPath + "': " + error;
 		return {false, reason};
 	}
+
+	// Serve the plugin factory the platform's host context (Linux: IRunLoop). Win32/macOS return
+	// nullptr, so setHostContext is skipped and behavior is unchanged. Routing through the seam keeps
+	// this file free of platform #ifdefs.
+	if (auto* factoryContext = platform::getPluginFactoryContext ())
+		module->getFactory ().setHostContext (factoryContext);
+
 	return {true, {}};
 }
 

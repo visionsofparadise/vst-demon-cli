@@ -1,13 +1,10 @@
 #include "PresetManager.h"
 
-#include "Utf8.h"
-
 #include "public.sdk/source/common/memorystream.h"
 #include "public.sdk/source/vst/vstpresetfile.h"
 
 #include <cstdio>
 #include <filesystem>
-#include <windows.h>
 
 using Steinberg::FUID;
 using Steinberg::IBStream;
@@ -21,36 +18,36 @@ namespace vstdemon {
 
 namespace {
 
-bool fileExists (const std::string& path)
+// Build a filesystem path from a UTF-8 std::string. u8path decodes the bytes as UTF-8 regardless of
+// the runtime's narrow encoding, so non-ASCII preset paths stay correct on every platform (on
+// Windows the UTF-8 process codepage manifest keeps argv/fopen UTF-8 too, so all layers agree).
+std::filesystem::path fsPath (const std::string& path)
 {
-	DWORD attrs = GetFileAttributesW (widen (path).c_str ());
-	return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+	return std::filesystem::u8path (path);
 }
 
-std::string parentDirectory (const std::string& path)
+bool fileExists (const std::string& path)
 {
-	size_t pos = path.find_last_of ("/\\");
-	return pos == std::string::npos ? std::string () : path.substr (0, pos);
+	std::error_code ec;
+	return std::filesystem::is_regular_file (fsPath (path), ec);
 }
 
 // Create the parent directory of `path` (recursively) if it does not already exist. Succeeds when
 // the directory exists or `path` has no directory component. On failure sets `error`.
 bool ensureParentDir (const std::string& path, std::string& error)
 {
-	std::string dir = parentDirectory (path);
+	std::filesystem::path dir = fsPath (path).parent_path ();
 	if (dir.empty ())
 		return true;
 
-	std::wstring wdir = widen (dir);
-	DWORD attrs = GetFileAttributesW (wdir.c_str ());
-	if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
+	std::error_code ec;
+	if (std::filesystem::is_directory (dir, ec))
 		return true;
 
-	std::error_code ec;
-	std::filesystem::create_directories (std::filesystem::path (wdir), ec);
+	std::filesystem::create_directories (dir, ec);
 	if (ec)
 	{
-		error = "Could not create directory '" + dir + "' for preset '" + path + "'.";
+		error = "Could not create directory '" + dir.u8string () + "' for preset '" + path + "'.";
 		return false;
 	}
 	return true;
@@ -201,16 +198,19 @@ bool PresetManager::writePreset (const std::string& path)
 		{
 			std::fprintf (stderr, "Failed to serialize preset state for '%s'.\n", path.c_str ());
 			stream = nullptr;
-			DeleteFileW (widen (tmp).c_str ());
+			std::error_code ec;
+			std::filesystem::remove (fsPath (tmp), ec);
 			return false;
 		}
 	}
 
-	if (!MoveFileExW (widen (tmp).c_str (), widen (path).c_str (), MOVEFILE_REPLACE_EXISTING))
+	std::error_code ec;
+	std::filesystem::rename (fsPath (tmp), fsPath (path), ec);
+	if (ec)
 	{
-		std::fprintf (stderr, "Failed to move '%s' over '%s' (error %lu).\n", tmp.c_str (),
-		              path.c_str (), GetLastError ());
-		DeleteFileW (widen (tmp).c_str ());
+		std::fprintf (stderr, "Failed to move '%s' over '%s' (%s).\n", tmp.c_str (), path.c_str (),
+		              ec.message ().c_str ());
+		std::filesystem::remove (fsPath (tmp), ec);
 		return false;
 	}
 

@@ -1,12 +1,12 @@
-#include "EditorWindow.h"
+#include "Platform.h"
 #include "PluginHost.h"
 #include "PresetManager.h"
 
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
-#include <windows.h>
 
 namespace {
 
@@ -164,7 +164,7 @@ int main (int argc, char* argv[])
 		return 0;
 	}
 
-	OleInitialize (nullptr);
+	vstdemon::platform::initialize ();
 
 	{
 		vstdemon::PluginHost host;
@@ -172,7 +172,7 @@ int main (int argc, char* argv[])
 		if (!opened.ok)
 		{
 			std::fprintf (stderr, "%s\n", opened.error.c_str ());
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
@@ -181,7 +181,7 @@ int main (int argc, char* argv[])
 		{
 			std::fprintf (stderr, "Could not resolve the component class ID for '%s'.\n",
 			              host.selectedClassName ().c_str ());
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
@@ -194,7 +194,7 @@ int main (int argc, char* argv[])
 		if (!prepared.ok)
 		{
 			std::fprintf (stderr, "%s\n", prepared.error.c_str ());
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
@@ -202,7 +202,7 @@ int main (int argc, char* argv[])
 		if (!loaded2.ok)
 		{
 			std::fprintf (stderr, "%s\n", loaded2.error.c_str ());
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
@@ -211,27 +211,30 @@ int main (int argc, char* argv[])
 		{
 			std::fprintf (stderr, "Plugin '%s' does not provide an editor view.\n",
 			              host.selectedClassName ().c_str ());
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
 		// Declared after host (and presetManager): reverse-order destruction tears the window and its
 		// handler down before the provider, so no controller callback can reach a dead window.
-		auto window = vstdemon::EditorWindow::make (host.selectedClassName (), view, &presetManager);
+		auto window = vstdemon::makePlatformWindow (host.selectedClassName (), view, &presetManager);
 		if (!window)
 		{
 			std::fprintf (stderr, "Failed to create editor window.\n");
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
-		host.componentHandler ().setWindow (window->getHwnd ());
+		// Route edit-triggered saves through the window's run-loop post (replaces the raw HWND handoff);
+		// every save lands on the single run-loop path shared with the 1s dirty poll.
+		vstdemon::PlatformWindow* windowPtr = window.get ();
+		host.componentHandler ().setSaveRequest ([windowPtr] { windowPtr->postSaveRequest (); });
 
 		if (!window->show ())
 		{
 			std::fprintf (stderr, "Failed to attach the plugin editor to the window.\n");
 			window->closePlugView ();
-			OleUninitialize ();
+			vstdemon::platform::terminate ();
 			return 1;
 		}
 
@@ -239,8 +242,7 @@ int main (int argc, char* argv[])
 
 		// Retarget updates the window title only (Open and Save As both retarget). The stdout events
 		// are separate: "open" fires on opens (startup --preset + File > Open Preset), "saved" on every
-		// write. Wired after the window exists so updateTitle has a valid HWND.
-		vstdemon::EditorWindow* windowPtr = window.get ();
+		// write. Wired after the window exists so updateTitle has a valid window.
 		presetManager.setOnRetarget ([windowPtr] (const std::string&) { windowPtr->updateTitle (); });
 		presetManager.setOnOpened ([] (const std::string& path) { emitPathEvent ("open", path); });
 		window->updateTitle ();
@@ -249,16 +251,11 @@ int main (int argc, char* argv[])
 		// order is ready -> open. Dormant launch (no --preset): announceTarget no-ops.
 		presetManager.announceTarget ();
 
-		MSG msg;
-		while (GetMessage (&msg, nullptr, 0, 0))
-		{
-			TranslateMessage (&msg);
-			DispatchMessage (&msg);
-		}
+		vstdemon::platform::runEventLoop ();
 
 		emitEvent ("closed");
 	}
 
-	OleUninitialize ();
+	vstdemon::platform::terminate ();
 	return 0;
 }

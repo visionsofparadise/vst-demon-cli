@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../Platform.h"
+
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/base/smartpointer.h"
 #include "pluginterfaces/gui/iplugview.h"
@@ -19,22 +21,26 @@ using Steinberg::IPtr;
 using Steinberg::TUID;
 using Steinberg::ViewRect;
 
-class EditorWindow : public IPlugFrame, public std::enable_shared_from_this<EditorWindow>
+class EditorWindow : public PlatformWindow,
+                     public IPlugFrame,
+                     public std::enable_shared_from_this<EditorWindow>
 {
 public:
 	static std::shared_ptr<EditorWindow> make (const std::string& title, const IPtr<IPlugView>& view,
 	                                            PresetManager* presetManager);
 
-	~EditorWindow () noexcept;
+	~EditorWindow () noexcept override;
 
-	bool show ();
-	void closePlugView ();
+	bool show () override;
+	void closePlugView () override;
 
 	// Set the title bar to "<class name> — <preset filename>" when a target is set (filename only),
 	// or "<class name>" alone when dormant. Called on every retarget (main.cpp's onRetarget).
-	void updateTitle ();
+	void updateTitle () override;
 
-	HWND getHwnd () const { return hwnd; }
+	// Post WM_VSTDEMON_SAVE to this window so the save runs on the message-loop path (the same path as
+	// the 1s dirty poll). Replaces main.cpp handing the ComponentHandler a raw HWND.
+	void postSaveRequest () override;
 
 	// IPlugFrame
 	Steinberg::tresult PLUGIN_API resizeView (IPlugView* view, ViewRect* newSize) override;
